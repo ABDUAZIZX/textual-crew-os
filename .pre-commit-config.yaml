@@ -38,8 +38,17 @@ repos:
         args: ["-c", "pyproject.toml", "-r", "src/"]
         additional_dependencies: ["bandit[toml]"]
 
-  - repo: https://github.com/pypa/pip-audit
-    rev: v2.7.3
+  # pip-audit runs against the project's own venv (local hook) so it
+  # audits the real installed dependencies. The upstream hook ran in an
+  # isolated env and its --disable-pip flag was invalid without -r.
+  # No --strict: it treats the skipped editable self-package as a
+  # failure; real vulnerabilities still fail the run regardless.
+  - repo: local
     hooks:
       - id: pip-audit
-        args: ["--strict", "--disable-pip", "--skip-editable"]
+        name: pip-audit (project venv)
+        entry: .venv/bin/pip-audit
+        language: system
+        args: ["--skip-editable"]
+        pass_filenames: false
+        always_run: true
