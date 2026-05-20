@@ -11,6 +11,7 @@ from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException, Request
 
+from crew_os.config import Settings
 from crew_os.core.models import TaskStatus
 from crew_os.memory.sqlite_store import SqliteStore
 from crew_os.metrics.sampler import MetricsSampler, MetricsSnapshot
@@ -38,6 +39,10 @@ def _usage(request: Request) -> UsageTracker:
 
 def _start_time(request: Request) -> float:
     return cast("float", request.app.state.start_time)
+
+
+def _settings(request: Request) -> Settings:
+    return cast("Settings", request.app.state.settings)
 
 
 @router.get("/status")
@@ -92,3 +97,25 @@ async def get_metrics(request: Request) -> MetricsSnapshot:
 @router.get("/usage", response_model=None)
 async def get_usage(request: Request) -> UsageReport:
     return _usage(request).report()
+
+
+@router.get("/config")
+async def get_config(request: Request) -> dict[str, Any]:
+    """Expose a *safe* read-only view of runtime settings.
+
+    Secrets (e.g. the Anthropic API key) are never returned; the key is
+    surfaced only as a boolean ``anthropic_configured`` flag.
+    """
+
+    s = _settings(request)
+    return {
+        "ollama_host": s.ollama_host,
+        "ollama_timeout": s.ollama_timeout,
+        "web_host": s.web_host,
+        "web_port": s.web_port,
+        "log_level": s.log_level,
+        "lab_mode": s.lab_mode,
+        "anthropic_configured": s.anthropic_api_key is not None,
+        "anthropic_model": s.anthropic_model,
+        "data_dir": str(s.data_dir),
+    }

@@ -156,6 +156,21 @@ async def test_usage_endpoint(client: httpx.AsyncClient) -> None:
     assert body["currency"] == "USD"
 
 
+async def test_config_endpoint_exposes_safe_subset(client: httpx.AsyncClient) -> None:
+    resp = await client.get("/api/config")
+    assert resp.status_code == 200
+    body = resp.json()
+    # Expected safe fields are present.
+    assert body["ollama_host"].startswith("http://127.0.0.1")
+    assert isinstance(body["ollama_timeout"], int)
+    assert body["web_host"] in {"127.0.0.1", "localhost", "::1"}
+    assert isinstance(body["anthropic_configured"], bool)
+    # The secret itself must never be exposed, under any key.
+    assert "anthropic_api_key" not in body
+    assert "api_key" not in body
+    assert all("secret" not in k.lower() for k in body)
+
+
 async def test_dashboard_html_served(client: httpx.AsyncClient) -> None:
     resp = await client.get("/")
     assert resp.status_code == 200

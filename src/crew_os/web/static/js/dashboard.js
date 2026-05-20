@@ -7,6 +7,9 @@
     if (html != null) e.innerHTML = html;
     return e;
   };
+  const esc = (s) => String(s).replace(/[&<>"']/g, (m) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]
+  ));
 
   // Role presentation metadata (avatars are local SVGs, no CDN).
   const META = {
@@ -24,6 +27,17 @@
   let tasks = [];
   const histories = { cpu: [], ram: [], gpu: [], pwr: [] };
   let selectedRole = null;
+
+  // theme state (persisted client-side, like crew_lang)
+  let theme = localStorage.getItem("crew_theme") || "midnight";
+  const LIGHT_THEMES = new Set(["solarized-light", "light"]);
+  let prevDarkTheme = LIGHT_THEMES.has(theme) ? "midnight" : theme;
+  let serverConfig = null;
+  const THEMES = [
+    ["midnight", "Midnight"], ["nord", "Nord"], ["gruvbox", "Gruvbox"],
+    ["tokyo-night", "Tokyo Night"], ["dracula", "Dracula"],
+    ["solarized-light", "Solarized Light"], ["light", "Light"],
+  ];
 
   // ─── i18n ────────────────────────────────────────────────
   function t(key) {
@@ -238,6 +252,7 @@
   function renderAll() {
     renderAgents();
     renderDetails();
+    renderSettings();
   }
 
   // ─── data fetching ───────────────────────────────────────
@@ -285,6 +300,71 @@
     wsBackoff = Math.min(wsBackoff * 2, 15000);
   }
 
+  // ─── theme + settings ────────────────────────────────────
+  function applyTheme() {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("crew_theme", theme);
+    const sel = document.getElementById("set-theme");
+    if (sel) sel.value = theme;
+  }
+  function setTheme(name) {
+    theme = name;
+    if (!LIGHT_THEMES.has(name)) prevDarkTheme = name;
+    applyTheme();
+  }
+
+  function renderSettings() {
+    const box = $("#settings-body");
+    if (!box) return;
+    const themeOpts = THEMES.map(
+      ([v, label]) => `<option value="${v}"${v === theme ? " selected" : ""}>${label}</option>`
+    ).join("");
+    const langOpts = [["en", t("lang_en")], ["ar", t("lang_ar")]].map(
+      ([v, label]) => `<option value="${v}"${v === lang ? " selected" : ""}>${label}</option>`
+    ).join("");
+    const c = serverConfig;
+    const server = c
+      ? `<dt>${t("settings_ollama_endpoint")}</dt><dd>${esc(c.ollama_host)}</dd>
+         <dt>${t("settings_timeout")}</dt><dd>${c.ollama_timeout} ${t("settings_seconds")}</dd>
+         <dt>${t("settings_web_addr")}</dt><dd>${esc(c.web_host)}:${c.web_port}</dd>
+         <dt>${t("settings_log_level")}</dt><dd>${esc(c.log_level)}</dd>
+         <dt>${t("settings_lab_mode")}</dt><dd>${t(c.lab_mode ? "on" : "off")}</dd>
+         <dt>${t("settings_anthropic")}</dt><dd>${t(c.anthropic_configured ? "settings_configured" : "settings_not_configured")}</dd>
+         <dt>${t("settings_data_dir")}</dt><dd>${esc(c.data_dir)}</dd>`
+      : `<dt>—</dt><dd>—</dd>`;
+    box.innerHTML = `
+      <div class="settings-form">
+        <div class="settings-group">
+          <label>${t("settings_theme")}</label>
+          <select id="set-theme">${themeOpts}</select>
+        </div>
+        <div class="settings-group">
+          <label>${t("settings_language")}</label>
+          <select id="set-lang">${langOpts}</select>
+        </div>
+        <div class="settings-group">
+          <label>${t("settings_server")}</label>
+          <dl class="settings-server">${server}</dl>
+          <div class="settings-note">${t("settings_server_note")}</div>
+        </div>
+        <div class="settings-actions">
+          <button class="btn" id="set-reset">${t("settings_reset")}</button>
+        </div>
+      </div>`;
+    $("#set-theme").addEventListener("change", (e) => setTheme(e.target.value));
+    $("#set-lang").addEventListener("change", (e) => {
+      lang = e.target.value;
+      localStorage.setItem("crew_lang", lang);
+      applyLang();
+    });
+    $("#set-reset").addEventListener("click", () => {
+      setTheme("midnight");
+      lang = "en";
+      localStorage.setItem("crew_lang", lang);
+      applyLang();
+    });
+  }
+
   // ─── view router ─────────────────────────────────────────
   // Sidebar items carry data-view; clicking one shows the matching
   // <div class="view" data-view="..."> in the center column and marks
@@ -314,6 +394,10 @@
     localStorage.setItem("crew_lang", lang);
     applyLang();
   });
+  // Quick dark/light flip; remembers the last dark theme.
+  $("#theme-toggle").addEventListener("click", () => {
+    setTheme(LIGHT_THEMES.has(theme) ? prevDarkTheme : "solarized-light");
+  });
   document.querySelectorAll("#detail-tabs .tab").forEach((tab) => {
     tab.addEventListener("click", () => {
       document.querySelectorAll("#detail-tabs .tab").forEach((x) => x.classList.remove("active"));
@@ -322,7 +406,9 @@
   });
 
   wireNav();
+  applyTheme();
   applyLang();
+  getJSON("/api/config").then((c) => { serverConfig = c; renderSettings(); }).catch(() => {});
   refreshSlow();
   refreshMetrics();
   connectWS();

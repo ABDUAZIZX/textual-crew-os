@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from crew_os.config import Settings, get_settings
 from crew_os.memory.sqlite_store import SqliteStore
 from crew_os.metrics.sampler import MetricsSampler
 from crew_os.metrics.usage import UsageTracker
@@ -42,6 +43,7 @@ def create_app(
     bus: MessageBus,
     sampler: MetricsSampler,
     usage: UsageTracker | None = None,
+    settings: Settings | None = None,
     extra_origins: list[str] | None = None,
 ) -> FastAPI:
     @asynccontextmanager
@@ -66,6 +68,7 @@ def create_app(
     app.state.bus = bus
     app.state.sampler = sampler
     app.state.usage = usage if usage is not None else UsageTracker()
+    app.state.settings = settings if settings is not None else get_settings()
     app.state.start_time = time.monotonic()
 
     app.include_router(rest_router)

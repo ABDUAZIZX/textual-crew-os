@@ -17,6 +17,51 @@
   --font: "Segoe UI", system-ui, -apple-system, "Noto Sans Arabic", sans-serif;
 }
 
+/* ─── Themes ──────────────────────────────────────────────────
+   Each theme only re-binds the custom properties declared on :root
+   (the default = "midnight"). dashboard.js sets the active theme via
+   <html data-theme="...">. Accents stay vivid to preserve the look. */
+html[data-theme="nord"] {
+  --bg: #2e3440; --panel: #3b4252; --panel-2: #434c5e;
+  --border: #4c566a; --border-soft: #434c5e;
+  --text: #d8dee9; --text-bright: #eceff4; --muted: #7b88a1;
+  --blue: #81a1c1; --green: #a3be8c; --purple: #b48ead;
+  --yellow: #ebcb8b; --cyan: #88c0d0; --red: #bf616a;
+}
+html[data-theme="gruvbox"] {
+  --bg: #282828; --panel: #32302f; --panel-2: #3c3836;
+  --border: #504945; --border-soft: #3c3836;
+  --text: #ebdbb2; --text-bright: #fbf1c7; --muted: #a89984;
+  --blue: #83a598; --green: #b8bb26; --purple: #d3869b;
+  --yellow: #fabd2f; --cyan: #8ec07c; --red: #fb4934;
+}
+html[data-theme="tokyo-night"] {
+  --bg: #1a1b26; --panel: #1f2335; --panel-2: #24283b;
+  --border: #2f334d; --border-soft: #24283b;
+  --text: #a9b1d6; --text-bright: #c0caf5; --muted: #565f89;
+  --blue: #7aa2f7; --green: #9ece6a; --purple: #bb9af7;
+  --yellow: #e0af68; --cyan: #7dcfff; --red: #f7768e;
+}
+html[data-theme="dracula"] {
+  --bg: #282a36; --panel: #2f3240; --panel-2: #343746;
+  --border: #44475a; --border-soft: #343746;
+  --text: #f8f8f2; --text-bright: #ffffff; --muted: #6272a4;
+  --blue: #8be9fd; --green: #50fa7b; --purple: #bd93f9;
+  --yellow: #f1fa8c; --cyan: #8be9fd; --red: #ff5555;
+}
+html[data-theme="solarized-light"] {
+  --bg: #fdf6e3; --panel: #eee8d5; --panel-2: #e7e0c9;
+  --border: #d7cfb0; --border-soft: #e0d8bf;
+  --text: #586e75; --text-bright: #073642; --muted: #93a1a1;
+  --blue: #268bd2; --green: #859900; --purple: #6c71c4;
+  --yellow: #b58900; --cyan: #2aa198; --red: #dc322f;
+}
+html[data-theme="light"] {
+  --bg: #f5f7fa; --panel: #ffffff; --panel-2: #eef2f7;
+  --border: #dbe2ea; --border-soft: #e6ebf1;
+  --text: #334155; --text-bright: #0f172a; --muted: #64748b;
+}
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body {
@@ -209,3 +254,23 @@ body { display: flex; flex-direction: column; min-height: 100vh; }
 
 .section-link { font-size: 12px; color: var(--blue); cursor: pointer; }
 [dir=rtl] .legend i { transform: scaleX(-1); }
+
+/* ─── Settings form ───────────────────────────────────────── */
+.settings-form { display: flex; flex-direction: column; gap: 18px; max-width: 560px; }
+.settings-group { display: flex; flex-direction: column; gap: 6px; }
+.settings-group > label { font-size: 12px; color: var(--muted); letter-spacing: .3px; }
+.settings-group select {
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+  padding: 8px 10px; border-radius: 8px; font-size: 13px; font-family: var(--font);
+  cursor: pointer;
+}
+.settings-group select:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+.settings-server {
+  display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 14px;
+  font-size: 13px;
+}
+.settings-server dt { color: var(--muted); }
+.settings-server dd { color: var(--text-bright); font-variant-numeric: tabular-nums; word-break: break-all; }
+.settings-note { font-size: 11px; color: var(--muted); }
+.settings-actions { display: flex; gap: 10px; }
