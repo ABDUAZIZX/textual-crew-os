@@ -20,16 +20,21 @@ repos:
         args: [--fix, --exit-non-zero-on-fix]
       - id: ruff-format
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.10.0
+  # mypy runs from the project venv (local hook) so it sees the real
+  # runtime deps (click, fastapi, httpx, ...). The upstream mirror ran
+  # in an isolated env with a hand-maintained, incomplete
+  # additional_dependencies list, which made typed decorators (click)
+  # and third-party imports appear untyped. Config (strict, plugins,
+  # overrides) is read from pyproject [tool.mypy].
+  - repo: local
     hooks:
       - id: mypy
-        files: ^src/
-        additional_dependencies:
-          - "pydantic>=2.7"
-          - "pydantic-settings>=2.3"
-          - "types-psutil"
-        args: ["--strict", "--ignore-missing-imports"]
+        name: mypy --strict (project venv)
+        entry: .venv/bin/mypy
+        language: system
+        args: ["src/crew_os"]
+        pass_filenames: false
+        files: ^src/.*\.py$
 
   - repo: https://github.com/PyCQA/bandit
     rev: 1.7.9
