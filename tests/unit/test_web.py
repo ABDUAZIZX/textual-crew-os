@@ -171,6 +171,17 @@ async def test_config_endpoint_exposes_safe_subset(client: httpx.AsyncClient) ->
     assert all("secret" not in k.lower() for k in body)
 
 
+async def test_chat_ws_route_registered(client: httpx.AsyncClient) -> None:
+    paths = {getattr(r, "path", None) for r in client._transport.app.routes}  # type: ignore[attr-defined]
+    assert "/ws/chat" in paths
+
+
+async def test_chat_routes_503_without_service(client: httpx.AsyncClient) -> None:
+    # The fixture builds the app without a chat_service.
+    assert (await client.get("/api/chat/agents")).status_code == 503
+    assert (await client.get("/api/chat/sessions")).status_code == 503
+
+
 async def test_dashboard_html_served(client: httpx.AsyncClient) -> None:
     resp = await client.get("/")
     assert resp.status_code == 200

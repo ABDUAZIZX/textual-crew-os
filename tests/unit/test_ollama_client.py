@@ -121,6 +121,34 @@ async def test_generate_stream_yields_pieces(client: OllamaClient) -> None:
 
 
 @respx.mock
+async def test_chat_stream_yields_pieces_and_final_counts(client: OllamaClient) -> None:
+    lines = [
+        json.dumps({"message": {"content": "Hel"}, "done": False}),
+        json.dumps({"message": {"content": "lo"}, "done": False}),
+        json.dumps(
+            {"message": {"content": ""}, "done": True, "eval_count": 7, "prompt_eval_count": 3}
+        ),
+    ]
+    respx.post(f"{HOST}/api/chat").mock(
+        return_value=httpx.Response(200, text="\n".join(lines) + "\n")
+    )
+    pieces = [p async for p in client.chat_stream("m", [ChatMessage(role="user", content="hi")])]
+    assert [p.content for p in pieces if p.content] == ["Hel", "lo"]
+    done = [p for p in pieces if p.done]
+    assert len(done) == 1
+    assert done[0].eval_count == 7
+    assert done[0].prompt_eval_count == 3
+
+
+@respx.mock
+async def test_chat_stream_http_error_becomes_ollama_error(client: OllamaClient) -> None:
+    respx.post(f"{HOST}/api/chat").mock(return_value=httpx.Response(503))
+    with pytest.raises(OllamaError, match="HTTP 503"):
+        async for _ in client.chat_stream("m", [ChatMessage(role="user", content="x")]):
+            pass
+
+
+@respx.mock
 async def test_generate_with_options_and_keep_alive(client: OllamaClient) -> None:
     route = respx.post(f"{HOST}/api/generate").mock(
         return_value=httpx.Response(200, json={"model": "m", "response": "x", "done": True})

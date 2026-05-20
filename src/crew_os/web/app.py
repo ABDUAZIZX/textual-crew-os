@@ -22,7 +22,9 @@ from crew_os.memory.sqlite_store import SqliteStore
 from crew_os.metrics.sampler import MetricsSampler
 from crew_os.metrics.usage import UsageTracker
 from crew_os.orchestration.bus import MessageBus
+from crew_os.orchestration.chat import ChatService
 from crew_os.orchestration.registry import AgentRegistry
+from crew_os.web.chat import chat_router, chat_websocket_endpoint
 from crew_os.web.routes import router as rest_router
 from crew_os.web.ws import websocket_endpoint
 
@@ -44,6 +46,7 @@ def create_app(
     sampler: MetricsSampler,
     usage: UsageTracker | None = None,
     settings: Settings | None = None,
+    chat_service: ChatService | None = None,
     extra_origins: list[str] | None = None,
 ) -> FastAPI:
     @asynccontextmanager
@@ -69,10 +72,13 @@ def create_app(
     app.state.sampler = sampler
     app.state.usage = usage if usage is not None else UsageTracker()
     app.state.settings = settings if settings is not None else get_settings()
+    app.state.chat_service = chat_service
     app.state.start_time = time.monotonic()
 
     app.include_router(rest_router)
+    app.include_router(chat_router)
     app.add_api_websocket_route("/ws", websocket_endpoint)
+    app.add_api_websocket_route("/ws/chat", chat_websocket_endpoint)
 
     if _STATIC_DIR.is_dir():
         app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")

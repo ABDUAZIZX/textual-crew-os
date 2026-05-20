@@ -57,6 +57,21 @@ class ChatResult(BaseModel):
     eval_count: int | None = None
 
 
+class ChatStreamPiece(BaseModel):
+    """One frame of a streaming chat response.
+
+    Content pieces carry ``content`` with ``done=False``. The final frame
+    has ``done=True`` and the token counts reported by Ollama.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    content: str = ""
+    done: bool = False
+    eval_count: int | None = None
+    prompt_eval_count: int | None = None
+
+
 class LoadedModel(BaseModel):
     model_config = ConfigDict(frozen=True, populate_by_name=True, protected_namespaces=())
 
@@ -228,3 +243,50 @@ class OllamaClient:
             ) from exc
         except httpx.HTTPError as exc:
             raise OllamaError(f"stream /api/generate failed: {exc}") from exc
+
+    async def chat_stream(
+        self,
+        model: str,
+        messages: Sequence[ChatMessage],
+        *,
+        options: Mapping[str, Any] | None = None,
+    ) -> AsyncIterator[ChatStreamPiece]:
+        """Stream a chat completion piece-by-piece via ``/api/chat``.
+
+        Yields a :class:`ChatStreamPiece` per token chunk, then a final
+        ``done`` piece carrying the token counts.
+        """
+
+        body: dict[str, Any] = {
+            "model": model,
+            "messages": [m.model_dump() for m in messages],
+            "stream": True,
+        }
+        if options:
+            body["options"] = dict(options)
+
+        client = self._client_or_create()
+        try:
+            async with client.stream("POST", "/api/chat", json=body) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    stripped = line.strip()
+                    if not stripped:
+                        continue
+                    chunk = json.loads(stripped)
+                    message = chunk.get("message") or {}
+                    if chunk.get("done"):
+                        yield ChatStreamPiece(
+                            content=message.get("content", ""),
+                            done=True,
+                            eval_count=chunk.get("eval_count"),
+                            prompt_eval_count=chunk.get("prompt_eval_count"),
+                        )
+                        return
+                    piece = message.get("content", "")
+                    if piece:
+                        yield ChatStreamPiece(content=piece)
+        except httpx.HTTPStatusError as exc:
+            raise OllamaError(f"stream /api/chat returned HTTP {exc.response.status_code}") from exc
+        except httpx.HTTPError as exc:
+            raise OllamaError(f"stream /api/chat failed: {exc}") from exc

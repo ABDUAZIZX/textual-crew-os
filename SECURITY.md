@@ -66,6 +66,25 @@ Textual Crew OS. It is reviewed at every stage of development.
   - `garak` runs in an isolated venv via subprocess - its transitive
     deps never enter the main environment.
 
+### A5. Interactive chat write path (Team Chat)
+- **Context:** the dashboard was originally read-only (CORS GET-only).
+  Team Chat (v1.1) adds the platform's only write surface: a WebSocket
+  at `/ws/chat` that turns a user prompt into streamed agent replies.
+- **Goal:** abuse the write path to drive the GPU, exhaust resources, or
+  reach it from off-host.
+- **Mitigations:**
+  - The socket is reachable on loopback only (`web_host` validated to a
+    loopback address); CORS for HTTP stays GET-only - the write path is
+    not a cross-origin HTTP endpoint.
+  - Chat is **generation only**: it calls the model, never an agent's
+    tools. The Policy Gate, bubblewrap sandbox, and LAB_MODE gates on
+    tool execution are untouched - chatting with the offensive model
+    yields text, not actions.
+  - A token-bucket budget (`chat` key) caps send rate.
+  - Every turn is persisted (`chat_history.db`) and audited
+    (`agent_message` events), including rate-limit rejections.
+  - The single-active-model lock bounds GPU use to one model at a time.
+
 ---
 
 ## Out of Scope

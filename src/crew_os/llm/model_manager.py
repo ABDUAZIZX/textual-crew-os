@@ -17,11 +17,17 @@ Policy (operator-chosen): *explicit unload + async lock*.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from typing import Any
 
 from crew_os.core.exceptions import InsufficientVRAMError
-from crew_os.llm.ollama_client import ChatMessage, ChatResult, GenerateResult, OllamaClient
+from crew_os.llm.ollama_client import (
+    ChatMessage,
+    ChatResult,
+    ChatStreamPiece,
+    GenerateResult,
+    OllamaClient,
+)
 from crew_os.metrics.usage import UsageTracker
 
 
@@ -135,3 +141,27 @@ class ModelManager:
         if self._usage is not None:
             self._usage.record(model, output_tokens=result.eval_count or 0)
         return result
+
+    async def chat_stream(
+        self,
+        model: str,
+        messages: Sequence[ChatMessage],
+        *,
+        options: Mapping[str, Any] | None = None,
+    ) -> AsyncIterator[ChatStreamPiece]:
+        """Stream a chat reply, swapping in ``model`` first.
+
+        Because :meth:`ensure_active` serialises on a single lock and only
+        one model is resident at a time, concurrent callers are queued
+        rather than run in parallel - intentional on an 8 GB GPU.
+        """
+
+        await self.ensure_active(model)
+        async for piece in self._client.chat_stream(model, messages, options=options):
+            if piece.done and self._usage is not None:
+                self._usage.record(
+                    model,
+                    input_tokens=piece.prompt_eval_count or 0,
+                    output_tokens=piece.eval_count or 0,
+                )
+            yield piece

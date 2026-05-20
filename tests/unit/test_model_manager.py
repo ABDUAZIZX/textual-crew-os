@@ -8,7 +8,13 @@ import pytest
 
 from crew_os.core.exceptions import InsufficientVRAMError
 from crew_os.llm.model_manager import ModelManager, default_vram_probe
-from crew_os.llm.ollama_client import ChatMessage, ChatResult, GenerateResult, LoadedModel
+from crew_os.llm.ollama_client import (
+    ChatMessage,
+    ChatResult,
+    ChatStreamPiece,
+    GenerateResult,
+    LoadedModel,
+)
 from crew_os.metrics.usage import UsageTracker
 
 
@@ -49,10 +55,32 @@ class FakeClient:
         self.calls.append(("chat", model))
         return ChatResult(model=model, message=ChatMessage(role="assistant", content="ok"))
 
+    async def chat_stream(self, model: str, messages: object, **_: object):
+        self.calls.append(("chat_stream", model))
+        yield ChatStreamPiece(content="o")
+        yield ChatStreamPiece(content="k")
+        yield ChatStreamPiece(content="", done=True, eval_count=5, prompt_eval_count=2)
+
 
 def _mgr(client: FakeClient, **kw: object) -> ModelManager:
     kw.setdefault("vram_probe", lambda: 8000)
     return ModelManager(client, **kw)  # type: ignore[arg-type]
+
+
+async def test_chat_stream_swaps_model_and_records_usage() -> None:
+    c = FakeClient()
+    usage = UsageTracker()
+    m = _mgr(c, usage_tracker=usage)
+    pieces = [
+        p async for p in m.chat_stream("llama3.1:8b", [ChatMessage(role="user", content="hi")])
+    ]
+    assert m.active_model == "llama3.1:8b"
+    assert ("warm", "llama3.1:8b") in c.calls
+    assert "".join(p.content for p in pieces) == "ok"
+    assert any(p.done for p in pieces)
+    report = usage.report()
+    # eval_count(5) + prompt_eval_count(2) recorded as output+input tokens.
+    assert report.session.total_tokens == 7
 
 
 async def test_first_activation_warms_without_unload() -> None:

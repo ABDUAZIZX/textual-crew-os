@@ -19,10 +19,12 @@ from crew_os.config import Settings, get_settings
 from crew_os.core.policy import PolicyEngine
 from crew_os.llm.model_manager import ModelManager
 from crew_os.llm.ollama_client import OllamaClient
+from crew_os.memory.chat_store import ChatStore
 from crew_os.memory.sqlite_store import SqliteStore
 from crew_os.metrics.sampler import MetricsSampler
 from crew_os.metrics.usage import UsageTracker
 from crew_os.orchestration.bus import MessageBus
+from crew_os.orchestration.chat import ChatService
 from crew_os.orchestration.delegator import Delegator
 from crew_os.orchestration.registry import AgentRegistry
 from crew_os.orchestration.supervisor_tier1 import SupervisorT1
@@ -36,11 +38,13 @@ class Crew:
     settings: Settings
     auditor: AuditLogger
     store: SqliteStore
+    chat_store: ChatStore
     bus: MessageBus
     usage: UsageTracker
     ollama: OllamaClient
     model_manager: ModelManager
     registry: AgentRegistry
+    chat_service: ChatService
     tier1: SupervisorT1
     tier2: SupervisorT2
     delegator: Delegator
@@ -49,6 +53,7 @@ class Crew:
     async def aclose(self) -> None:
         await self.sampler.stop()
         await self.store.close()
+        await self.chat_store.close()
         await self.ollama.aclose()
 
 
@@ -66,6 +71,8 @@ async def build_crew(settings: Settings | None = None) -> Crew:
     auditor = AuditLogger(data / "audit" / "audit.jsonl")
     store = SqliteStore(data / "memory" / "working.db")
     await store.connect()
+    chat_store = ChatStore(data / "memory" / "chat_history.db")
+    await chat_store.connect()
     bus = MessageBus()
     usage = UsageTracker()
 
@@ -74,6 +81,8 @@ async def build_crew(settings: Settings | None = None) -> Crew:
 
     policy = PolicyEngine()
     rate_limiter = RateLimiter()
+    # Chat send budget: ~20 burst, refilling 1/s (loopback, single user).
+    rate_limiter.configure("chat", capacity=20, refill_per_sec=1.0)
 
     registry = AgentRegistry()
     registry.register(
@@ -125,15 +134,25 @@ async def build_crew(settings: Settings | None = None) -> Crew:
     )
     sampler = MetricsSampler(interval=0.5)
 
+    chat_service = ChatService(
+        registry=registry,
+        model_manager=model_manager,
+        store=chat_store,
+        auditor=auditor,
+        rate_limiter=rate_limiter,
+    )
+
     return Crew(
         settings=settings,
         auditor=auditor,
         store=store,
+        chat_store=chat_store,
         bus=bus,
         usage=usage,
         ollama=ollama,
         model_manager=model_manager,
         registry=registry,
+        chat_service=chat_service,
         tier1=tier1,
         tier2=tier2,
         delegator=delegator,

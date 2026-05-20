@@ -1,0 +1,246 @@
+"""Interactive Team Chat orchestration.
+
+``ChatService`` is the central facade the dashboard's chat panel talks to.
+It turns a user prompt into streamed agent replies, persists the
+transcript, and emits audit events - the interactive counterpart to the
+``crew run`` CLI path.
+
+Two modes:
+
+* **single** - stream from one agent, with that agent's own slice of the
+  session history for context.
+* **crew** - stream from every chat-capable agent *sequentially*. Parallel
+  fan-out is impossible here: the :class:`~crew_os.llm.model_manager.
+  ModelManager` keeps a single model resident on the 8 GB GPU and
+  serialises swaps, so concurrent calls would queue and thrash. Sequential
+  streaming gives a live, one-after-another feel without that cost.
+
+Chat is *generation only*: it never invokes agent tools, so the policy /
+sandbox / LAB_MODE gates on tool execution remain fully in force even when
+chatting with the offensive-research model.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from collections.abc import AsyncIterator
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict
+
+from crew_os.core.exceptions import CrewOSError
+from crew_os.core.models import AgentRole, Event, EventType, Severity
+from crew_os.llm.model_manager import ModelManager
+from crew_os.llm.ollama_client import ChatMessage
+from crew_os.memory.chat_store import ChatStore
+from crew_os.orchestration.registry import AgentRegistry
+from crew_os.security.audit import AuditLogger
+from crew_os.security.rate_limit import RateLimiter
+
+ChatMode = Literal["single", "crew"]
+
+# Concise chat personas, kept separate from the agents' task-handling
+# system prompts. Roles absent here fall back to a neutral assistant.
+SYSTEM_PROMPTS: dict[AgentRole, str] = {
+    AgentRole.CODER: (
+        "You are a senior software engineer. Review and write correct, "
+        "idiomatic, production-quality code. Be precise and technical."
+    ),
+    AgentRole.SEC_DEFENSIVE: (
+        "You are a defensive security engineer. Assess code and systems for "
+        "weaknesses, threat-model them, and recommend concrete hardening."
+    ),
+    AgentRole.SEC_OFFENSIVE: (
+        "You are an offensive security researcher in an authorised lab. "
+        "Identify attack vectors and how they would be exploited, for "
+        "defensive understanding. Reasoning only - never perform actions."
+    ),
+    AgentRole.AUDITOR: (
+        "You are a meticulous auditor. Summarise, verify claims, and report "
+        "risks and inconsistencies clearly and concisely."
+    ),
+}
+
+# Supervisors route/plan; they are not chat participants.
+_NON_CHAT_ROLES = frozenset({AgentRole.SUPERVISOR_T1, AgentRole.SUPERVISOR_T2})
+
+_RATE_KEY = "chat"
+
+
+class ChatFrame(BaseModel):
+    """A single streamed frame sent to the chat client."""
+
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["user", "start", "token", "done", "error"]
+    agent: str
+    session_id: str
+    content: str = ""
+    tokens: int | None = None
+
+
+class ChatService:
+    def __init__(
+        self,
+        *,
+        registry: AgentRegistry,
+        model_manager: ModelManager,
+        store: ChatStore,
+        auditor: AuditLogger | None = None,
+        rate_limiter: RateLimiter | None = None,
+    ) -> None:
+        self._registry = registry
+        self._models = model_manager
+        self._store = store
+        self._auditor = auditor
+        self._rate = rate_limiter
+
+    @property
+    def store(self) -> ChatStore:
+        return self._store
+
+    def available_roles(self) -> list[AgentRole]:
+        """Chat-capable roles, in stable order."""
+
+        roles = [r for r in self._registry.roles() if r not in _NON_CHAT_ROLES]
+        return sorted(roles, key=lambda r: r.value)
+
+    async def _audit(
+        self, role: AgentRole | None, payload: dict[str, str | int], severity: Severity
+    ) -> None:
+        if self._auditor is None:
+            return
+        event = Event(
+            type=EventType.AGENT_MESSAGE,
+            severity=severity,
+            agent_role=role,
+            payload=dict(payload),
+        )
+        await asyncio.to_thread(self._auditor.append, event)
+
+    def _system_for(self, role: AgentRole) -> str:
+        return SYSTEM_PROMPTS.get(role, "You are a helpful assistant.")
+
+    async def _history_for(self, session_id: str, role: AgentRole) -> list[ChatMessage]:
+        """User turns plus this agent's own replies, as chat messages."""
+
+        stored = await self._store.get_messages(session_id)
+        out: list[ChatMessage] = []
+        for m in stored:
+            if m.role == "user":
+                out.append(ChatMessage(role="user", content=m.content))
+            elif m.role == "assistant" and m.agent_id == role.value:
+                out.append(ChatMessage(role="assistant", content=m.content))
+        return out
+
+    async def handle(
+        self,
+        *,
+        session_id: str,
+        mode: ChatMode,
+        role: AgentRole | None,
+        content: str,
+    ) -> AsyncIterator[ChatFrame]:
+        """Persist the user turn and stream one or more agent replies."""
+
+        content = content.strip()
+        if not content:
+            yield ChatFrame(
+                type="error", agent="system", session_id=session_id, content="empty message"
+            )
+            return
+
+        if self._rate is not None and not self._rate.check(_RATE_KEY):
+            await self._audit(
+                None, {"session": session_id, "reason": "rate_limited"}, Severity.WARNING
+            )
+            yield ChatFrame(
+                type="error",
+                agent="system",
+                session_id=session_id,
+                content="rate limit exceeded; slow down",
+            )
+            return
+
+        if mode == "single":
+            if role is None or role not in self.available_roles():
+                yield ChatFrame(
+                    type="error",
+                    agent="system",
+                    session_id=session_id,
+                    content="unknown or unavailable agent",
+                )
+                return
+            targets = [role]
+        else:
+            targets = self.available_roles()
+            if not targets:
+                yield ChatFrame(
+                    type="error",
+                    agent="system",
+                    session_id=session_id,
+                    content="no chat-capable agents registered",
+                )
+                return
+
+        await self._store.ensure_session(session_id, title=content[:60])
+        await self._store.add_message(
+            session_id=session_id, agent_id="user", role="user", content=content
+        )
+        await self._audit(None, {"session": session_id, "mode": mode}, Severity.INFO)
+        yield ChatFrame(type="user", agent="user", session_id=session_id, content=content)
+
+        for target in targets:
+            async for frame in self._stream_role(
+                session_id=session_id,
+                role=target,
+                prompt=content,
+                include_history=(mode == "single"),
+            ):
+                yield frame
+
+    async def _stream_role(
+        self,
+        *,
+        session_id: str,
+        role: AgentRole,
+        prompt: str,
+        include_history: bool,
+    ) -> AsyncIterator[ChatFrame]:
+        agent = self._registry.require(role)
+        if include_history:
+            messages = await self._history_for(session_id, role)
+        else:
+            messages = [ChatMessage(role="user", content=prompt)]
+        messages = [ChatMessage(role="system", content=self._system_for(role)), *messages]
+
+        yield ChatFrame(type="start", agent=role.value, session_id=session_id)
+        parts: list[str] = []
+        tokens = 0
+        try:
+            async for piece in self._models.chat_stream(agent.model, messages):
+                if piece.content:
+                    parts.append(piece.content)
+                    yield ChatFrame(
+                        type="token",
+                        agent=role.value,
+                        session_id=session_id,
+                        content=piece.content,
+                    )
+                if piece.done and piece.eval_count is not None:
+                    tokens = piece.eval_count
+        except CrewOSError as exc:
+            await self._audit(role, {"session": session_id, "error": str(exc)}, Severity.ERROR)
+            yield ChatFrame(type="error", agent=role.value, session_id=session_id, content=str(exc))
+            return
+
+        full = "".join(parts)
+        await self._store.add_message(
+            session_id=session_id,
+            agent_id=role.value,
+            role="assistant",
+            content=full,
+            tokens_used=tokens,
+        )
+        await self._audit(role, {"session": session_id, "tokens": tokens}, Severity.INFO)
+        yield ChatFrame(type="done", agent=role.value, session_id=session_id, tokens=tokens)

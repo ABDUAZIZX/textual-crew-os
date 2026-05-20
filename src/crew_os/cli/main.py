@@ -160,6 +160,7 @@ def dashboard(no_browser: bool) -> None:
         sampler=crew.sampler,
         usage=crew.usage,
         settings=crew.settings,
+        chat_service=crew.chat_service,
     )
     url = f"http://{settings.web_host}:{settings.web_port}"
     console.print(f"[green]Serving dashboard at[/green] {url}")
