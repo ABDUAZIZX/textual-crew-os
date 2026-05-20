@@ -54,14 +54,14 @@
   <div class="layout">
     <!-- Sidebar -->
     <nav class="sidebar">
-      <div class="nav-item active"><span>🏠</span><span data-i18n="overview">Overview</span></div>
+      <div class="nav-item active" data-view="overview" role="button" tabindex="0"><span>🏠</span><span data-i18n="overview">Overview</span></div>
       <div class="nav-section" data-i18n="agents">Agents</div>
       <div id="nav-agents"></div>
       <div class="nav-section" data-i18n="system">System</div>
-      <div class="nav-item"><span>📈</span><span data-i18n="live_activity">Live Activity</span></div>
-      <div class="nav-item"><span>📜</span><span data-i18n="audit_logs">Audit Logs</span></div>
-      <div class="nav-item"><span>📊</span><span data-i18n="stats_metrics">Stats &amp; Metrics</span></div>
-      <div class="nav-item"><span>⚙️</span><span data-i18n="settings">Settings</span></div>
+      <div class="nav-item" data-view="live-activity" role="button" tabindex="0"><span>📈</span><span data-i18n="live_activity">Live Activity</span></div>
+      <div class="nav-item" data-view="audit-logs" role="button" tabindex="0"><span>📜</span><span data-i18n="audit_logs">Audit Logs</span></div>
+      <div class="nav-item" data-view="stats" role="button" tabindex="0"><span>📊</span><span data-i18n="stats_metrics">Stats &amp; Metrics</span></div>
+      <div class="nav-item" data-view="settings" role="button" tabindex="0"><span>⚙️</span><span data-i18n="settings">Settings</span></div>
       <div class="sidebar-user">
         <span>👤</span>
         <div>
@@ -73,38 +73,73 @@
 
     <!-- Center -->
     <main class="center">
-      <section class="panel">
-        <div class="panel-head">
-          <div>
-            <h3 data-i18n="network_map">Agent Network Map</h3>
-            <p data-i18n="network_sub">Real-time agent status and communication</p>
+      <!-- Overview (default view): network map + agent details -->
+      <div class="view" data-view="overview">
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h3 data-i18n="network_map">Agent Network Map</h3>
+              <p data-i18n="network_sub">Real-time agent status and communication</p>
+            </div>
           </div>
-        </div>
-        <div class="agent-grid" id="agent-grid"></div>
-        <div class="legend">
-          <span class="lg-blue"><i></i><span data-i18n="task_delegation">Task Delegation</span></span>
-          <span class="lg-green"><i></i><span data-i18n="security_check">Security Check</span></span>
-          <span class="lg-purple"><i></i><span data-i18n="audit_report">Audit &amp; Report</span></span>
-          <span class="lg-yellow"><i></i><span data-i18n="offensive_testing">Offensive Testing</span></span>
-          <span class="lg-gray"><i></i><span data-i18n="data_flow">Data Flow</span></span>
-        </div>
-      </section>
+          <div class="agent-grid" id="agent-grid"></div>
+          <div class="legend">
+            <span class="lg-blue"><i></i><span data-i18n="task_delegation">Task Delegation</span></span>
+            <span class="lg-green"><i></i><span data-i18n="security_check">Security Check</span></span>
+            <span class="lg-purple"><i></i><span data-i18n="audit_report">Audit &amp; Report</span></span>
+            <span class="lg-yellow"><i></i><span data-i18n="offensive_testing">Offensive Testing</span></span>
+            <span class="lg-gray"><i></i><span data-i18n="data_flow">Data Flow</span></span>
+          </div>
+        </section>
 
-      <section class="panel">
-        <div class="panel-head">
-          <h3 data-i18n="agent_details">Agent Details</h3>
-          <div class="tabs" id="detail-tabs">
-            <div class="tab active" data-tab="task" data-i18n="current_task">Current Task</div>
-            <div class="tab" data-tab="caps" data-i18n="capabilities">Capabilities</div>
-            <div class="tab" data-tab="metrics" data-i18n="metrics">Metrics</div>
-            <div class="tab" data-tab="logs" data-i18n="logs">Logs</div>
+        <section class="panel">
+          <div class="panel-head">
+            <h3 data-i18n="agent_details">Agent Details</h3>
+            <div class="tabs" id="detail-tabs">
+              <div class="tab active" data-tab="task" data-i18n="current_task">Current Task</div>
+              <div class="tab" data-tab="caps" data-i18n="capabilities">Capabilities</div>
+              <div class="tab" data-tab="metrics" data-i18n="metrics">Metrics</div>
+              <div class="tab" data-tab="logs" data-i18n="logs">Logs</div>
+            </div>
           </div>
-        </div>
-        <div class="details-body">
-          <div class="detail-id" id="detail-id"></div>
-          <div id="detail-content"></div>
-        </div>
-      </section>
+          <div class="details-body">
+            <div class="detail-id" id="detail-id"></div>
+            <div id="detail-content"></div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Live Activity (populated in a later step) -->
+      <div class="view hidden" data-view="live-activity">
+        <section class="panel">
+          <div class="panel-head"><h3 data-i18n="live_activity">Live Activity</h3></div>
+          <div id="live-activity-body"></div>
+        </section>
+      </div>
+
+      <!-- Audit Logs (populated in a later step) -->
+      <div class="view hidden" data-view="audit-logs">
+        <section class="panel">
+          <div class="panel-head"><h3 data-i18n="audit_logs">Audit Logs</h3></div>
+          <div id="audit-logs-body"></div>
+        </section>
+      </div>
+
+      <!-- Stats & Metrics (populated in a later step) -->
+      <div class="view hidden" data-view="stats">
+        <section class="panel">
+          <div class="panel-head"><h3 data-i18n="stats_metrics">Stats &amp; Metrics</h3></div>
+          <div id="stats-body"></div>
+        </section>
+      </div>
+
+      <!-- Settings (populated in a later step) -->
+      <div class="view hidden" data-view="settings">
+        <section class="panel">
+          <div class="panel-head"><h3 data-i18n="settings">Settings</h3></div>
+          <div id="settings-body"></div>
+        </section>
+      </div>
     </main>
 
     <!-- Right rail -->

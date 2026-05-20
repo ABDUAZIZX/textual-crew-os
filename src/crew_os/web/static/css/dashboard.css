@@ -117,6 +117,8 @@ body { display: flex; flex-direction: column; min-height: 100vh; }
 
 /* ─── Center ──────────────────────────────────────────────── */
 .center { padding: 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+.view { display: flex; flex-direction: column; gap: 16px; }
+.nav-item:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
 .panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
 .panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .panel-head h3 { font-size: 15px; color: var(--text-bright); }

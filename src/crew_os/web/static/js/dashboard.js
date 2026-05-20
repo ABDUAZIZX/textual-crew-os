@@ -101,12 +101,12 @@
           <div class="m"><div class="k">${t("completed_tasks")}</div><div class="v">${completedFor(a.role)}</div></div>
           <div class="m"><div class="k">${t("capabilities")}</div><div class="v">${a.capabilities.length}</div></div>
         </div>`;
-      card.addEventListener("click", () => { selectedRole = a.role; renderAgents(); renderDetails(); });
+      card.addEventListener("click", () => { selectedRole = a.role; showView("overview"); renderAgents(); renderDetails(); });
       grid.appendChild(card);
 
       const item = el("div", "nav-item");
       item.innerHTML = `<img src="${avatarFor(a.role)}" width="18" height="18"><span>${roleLabel(a.role)}</span><span class="ndot ${meta.accent === "cyan" ? "blue" : meta.accent}"></span>`;
-      item.addEventListener("click", () => { selectedRole = a.role; renderAgents(); renderDetails(); });
+      item.addEventListener("click", () => { selectedRole = a.role; showView("overview"); renderAgents(); renderDetails(); });
       nav.appendChild(item);
     });
   }
@@ -285,6 +285,29 @@
     wsBackoff = Math.min(wsBackoff * 2, 15000);
   }
 
+  // ─── view router ─────────────────────────────────────────
+  // Sidebar items carry data-view; clicking one shows the matching
+  // <div class="view" data-view="..."> in the center column and marks
+  // the item active. Agent items/cards route to overview + select.
+  function showView(name) {
+    document.querySelectorAll(".center .view").forEach((v) => {
+      v.classList.toggle("hidden", v.dataset.view !== name);
+    });
+    document.querySelectorAll(".sidebar .nav-item[data-view]").forEach((n) => {
+      n.classList.toggle("active", n.dataset.view === name);
+    });
+  }
+
+  function wireNav() {
+    document.querySelectorAll(".sidebar .nav-item[data-view]").forEach((item) => {
+      const go = () => showView(item.dataset.view);
+      item.addEventListener("click", go);
+      item.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); }
+      });
+    });
+  }
+
   // ─── boot ────────────────────────────────────────────────
   $("#lang-toggle").addEventListener("click", () => {
     lang = lang === "en" ? "ar" : "en";
@@ -298,6 +321,7 @@
     });
   });
 
+  wireNav();
   applyLang();
   refreshSlow();
   refreshMetrics();
