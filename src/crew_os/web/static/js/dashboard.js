@@ -39,6 +39,19 @@
     ["solarized-light", "Solarized Light"], ["light", "Light"],
   ];
 
+  // chat state
+  const newSessionId = () =>
+    (window.crypto && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(16).slice(2));
+  let chatWs = null;
+  let chatWsBackoff = 1000;
+  let chatSession = newSessionId();
+  let chatMode = "single";
+  let chatAgents = [];          // available role values
+  let chatBusy = false;
+  let chatPending = 0;          // outstanding agent turns this send
+  let chatTokens = 0;           // tokens accumulated this session
+  const chatBubbles = {};       // role -> { el, parts: [] } while streaming
+
   // ─── i18n ────────────────────────────────────────────────
   function t(key) {
     const dict = window.I18N[lang] || window.I18N.en;
@@ -50,6 +63,9 @@
     $("#lang-label").textContent = lang === "ar" ? "ع" : "EN";
     document.querySelectorAll("[data-i18n]").forEach((node) => {
       node.textContent = t(node.getAttribute("data-i18n"));
+    });
+    document.querySelectorAll("[data-i18n-ph]").forEach((node) => {
+      node.setAttribute("placeholder", t(node.getAttribute("data-i18n-ph")));
     });
     renderAll();
   }
@@ -253,6 +269,7 @@
     renderAgents();
     renderDetails();
     renderSettings();
+    renderChatChrome();
   }
 
   // ─── data fetching ───────────────────────────────────────
@@ -365,6 +382,341 @@
     });
   }
 
+  // ─── team chat ───────────────────────────────────────────
+  // Lightweight markdown: escape, then fenced code, inline code, bold,
+  // and newlines -> <br> (only outside <pre> blocks).
+  function mdLite(raw) {
+    return esc(raw)
+      .split(/(```[\s\S]*?```)/g)
+      .map((seg) => {
+        if (seg.startsWith("```")) {
+          const code = seg.replace(/^```[a-zA-Z0-9_-]*\n?/, "").replace(/```$/, "").replace(/\n$/, "");
+          return `<pre><code>${code}</code></pre>`;
+        }
+        return seg
+          .replace(/`([^`\n]+)`/g, "<code>$1</code>")
+          .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+          .replace(/\n/g, "<br>");
+      })
+      .join("");
+  }
+  const brEsc = (raw) => esc(raw).replace(/\n/g, "<br>");
+
+  function chatLog() { return $("#chat-log"); }
+  function chatScroll() {
+    const log = chatLog();
+    if (log) log.scrollTop = log.scrollHeight;
+  }
+  function chatShowEmptyIfNeeded() {
+    const log = chatLog();
+    if (log && log.children.length === 0) {
+      log.appendChild(el("div", "chat-empty", t("chat_empty")));
+    }
+  }
+  function chatClearEmpty() {
+    const empty = chatLog() && chatLog().querySelector(".chat-empty");
+    if (empty) empty.remove();
+  }
+
+  function addUserBubble(content) {
+    chatClearEmpty();
+    const msg = el("div", "chat-msg user");
+    msg.innerHTML = `<div class="who">${t("chat_you")} 👤</div>
+      <div class="chat-bubble">${brEsc(content)}</div>`;
+    chatLog().appendChild(msg);
+    chatScroll();
+  }
+  function startAgentBubble(role) {
+    chatClearEmpty();
+    const meta = META[role] || { accent: "blue" };
+    const msg = el("div", "chat-msg agent");
+    msg.dataset.accent = meta.accent === "cyan" ? "cyan" : meta.accent;
+    msg.innerHTML = `
+      <div class="who" style="color:var(--${meta.accent})">
+        <img src="${avatarFor(role)}" alt="">${roleLabel(role)}</div>
+      <div class="chat-bubble"><span class="typing"><i></i><i></i><i></i></span></div>`;
+    chatLog().appendChild(msg);
+    chatBubbles[role] = { el: msg.querySelector(".chat-bubble"), parts: [] };
+    chatScroll();
+  }
+  function appendAgentToken(role, text) {
+    const b = chatBubbles[role];
+    if (!b) return;
+    b.parts.push(text);
+    b.el.innerHTML = brEsc(b.parts.join(""));
+    chatScroll();
+  }
+  function finishAgentBubble(role, tokens) {
+    const b = chatBubbles[role];
+    if (!b) return;
+    const full = b.parts.join("");
+    b.el.innerHTML = mdLite(full);
+    if (tokens != null) {
+      const tok = el("div", "chat-tok", `${tokens} ${t("chat_tokens")}`);
+      b.el.parentElement.appendChild(tok);
+      chatTokens += tokens;
+    }
+    delete chatBubbles[role];
+    renderChatStatus();
+    chatScroll();
+  }
+  function agentErrorBubble(role, message) {
+    const b = chatBubbles[role];
+    if (b) {
+      b.el.className = "chat-bubble err";
+      b.el.textContent = message;
+      delete chatBubbles[role];
+    } else {
+      chatClearEmpty();
+      const msg = el("div", "chat-msg agent");
+      msg.innerHTML = `<div class="who" style="color:var(--red)">${roleLabel(role)}</div>
+        <div class="chat-bubble err"></div>`;
+      msg.querySelector(".chat-bubble").textContent = message;
+      chatLog().appendChild(msg);
+    }
+    chatScroll();
+  }
+  function systemErrorBubble(message) {
+    chatClearEmpty();
+    const msg = el("div", "chat-msg agent");
+    msg.innerHTML = `<div class="who" style="color:var(--red)">system</div>
+      <div class="chat-bubble err"></div>`;
+    msg.querySelector(".chat-bubble").textContent = message;
+    chatLog().appendChild(msg);
+    chatScroll();
+  }
+
+  function renderChatStatus() {
+    const s = $("#chat-status");
+    if (!s) return;
+    const state = chatBusy ? t("chat_busy") : "";
+    s.textContent = `${t("chat_tokens")}: ${chatTokens}` + (state ? `  ·  ${state}` : "");
+  }
+  function chatConn(cls, key) {
+    const c = $("#chat-conn");
+    const label = $("#chat-conn-label");
+    if (c) c.className = "chat-conn" + (cls ? " " + cls : "");
+    if (label) label.textContent = t(key);
+  }
+  function setChatBusy(busy) {
+    chatBusy = busy;
+    const send = $("#chat-send");
+    if (send) send.disabled = busy;
+    renderChatStatus();
+  }
+
+  // Re-label chat chrome on language change (called from renderAll).
+  function renderChatChrome() {
+    const modeBtn = $("#chat-mode");
+    if (modeBtn) {
+      modeBtn.innerHTML = chatMode === "crew"
+        ? `🤝 <span>${t("chat_mode_crew")}</span>`
+        : `👤 <span>${t("chat_mode_single")}</span>`;
+    }
+    const sel = $("#chat-agent");
+    if (sel) {
+      const cur = sel.value;
+      sel.innerHTML = chatAgents
+        .map((r) => `<option value="${r}">${roleLabel(r)}</option>`)
+        .join("");
+      if (cur) sel.value = cur;
+      sel.disabled = chatMode === "crew";
+    }
+    chatConn(
+      chatWs && chatWs.readyState === 1 ? "ok" : "bad",
+      chatWs && chatWs.readyState === 1 ? "chat_connected" : "chat_disconnected"
+    );
+    renderChatStatus();
+  }
+
+  async function populateChatAgents() {
+    try {
+      chatAgents = await getJSON("/api/chat/agents");
+    } catch (e) { chatAgents = []; }
+    renderChatChrome();
+  }
+
+  function connectChatWs() {
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    chatConn("", "chat_connecting");
+    try { chatWs = new WebSocket(`${proto}://${location.host}/ws/chat`); }
+    catch (e) { scheduleChatReconnect(); return; }
+    chatWs.onopen = () => { chatWsBackoff = 1000; chatConn("ok", "chat_connected"); };
+    chatWs.onmessage = (ev) => {
+      let f; try { f = JSON.parse(ev.data); } catch (e) { return; }
+      handleChatFrame(f);
+    };
+    chatWs.onclose = () => { chatConn("bad", "chat_disconnected"); scheduleChatReconnect(); };
+    chatWs.onerror = () => { try { chatWs.close(); } catch (e) {} };
+  }
+  function scheduleChatReconnect() {
+    setTimeout(connectChatWs, chatWsBackoff);
+    chatWsBackoff = Math.min(chatWsBackoff * 2, 15000);
+  }
+
+  function endTurnIf(done) {
+    if (done) chatPending -= 1;
+    if (chatPending <= 0) { chatPending = 0; setChatBusy(false); }
+  }
+  function handleChatFrame(f) {
+    switch (f.type) {
+      case "user": addUserBubble(f.content); break;
+      case "start": startAgentBubble(f.agent); break;
+      case "token": appendAgentToken(f.agent, f.content); break;
+      case "done": finishAgentBubble(f.agent, f.tokens); endTurnIf(true); break;
+      case "error":
+        if (f.agent === "system") { systemErrorBubble(f.content); chatPending = 0; setChatBusy(false); }
+        else { agentErrorBubble(f.agent, f.content); endTurnIf(true); }
+        break;
+      default: break;
+    }
+  }
+
+  function sendChat() {
+    const ta = $("#chat-text");
+    if (!ta) return;
+    const content = ta.value.trim();
+    if (!content || chatBusy) return;
+    if (!chatWs || chatWs.readyState !== 1) { systemErrorBubble(t("chat_disconnected")); return; }
+    chatPending = chatMode === "crew" ? Math.max(1, chatAgents.length) : 1;
+    setChatBusy(true);
+    chatWs.send(JSON.stringify({
+      session_id: chatSession,
+      mode: chatMode,
+      agent: chatMode === "single" ? ($("#chat-agent").value || chatAgents[0]) : null,
+      content,
+    }));
+    ta.value = "";
+  }
+  function cancelChat() {
+    if (!chatBusy) return;
+    // Closing the socket aborts the server-side stream; then reconnect.
+    Object.keys(chatBubbles).forEach((role) => {
+      const b = chatBubbles[role];
+      b.el.innerHTML = (b.parts.length ? brEsc(b.parts.join("")) + " " : "") +
+        `<span class="chat-tok">${t("chat_cancelled")}</span>`;
+      delete chatBubbles[role];
+    });
+    chatPending = 0;
+    setChatBusy(false);
+    try { chatWs.close(); } catch (e) {}
+  }
+  function clearChat() {
+    const log = chatLog();
+    if (log) log.innerHTML = "";
+    chatSession = newSessionId();
+    chatTokens = 0;
+    chatShowEmptyIfNeeded();
+    renderChatStatus();
+  }
+  function toggleMode() {
+    chatMode = chatMode === "single" ? "crew" : "single";
+    renderChatChrome();
+  }
+  function exportChat() {
+    const log = chatLog();
+    if (!log) return;
+    const lines = [];
+    log.querySelectorAll(".chat-msg").forEach((m) => {
+      const who = (m.querySelector(".who") || {}).textContent || "";
+      const body = (m.querySelector(".chat-bubble") || {}).innerText || "";
+      lines.push(`### ${who.trim()}\n\n${body.trim()}\n`);
+    });
+    const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
+    const a = el("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `crew-chat-${chatSession.slice(0, 8)}.md`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  async function openSessionsModal() {
+    let sessions = [];
+    try { sessions = await getJSON("/api/chat/sessions"); } catch (e) {}
+    const overlay = el("div", "modal-overlay");
+    const items = sessions.length
+      ? sessions.map((s) =>
+          `<div class="modal-item" data-id="${esc(s.id)}">
+            <span class="mi-title">${esc(s.title || s.id.slice(0, 8))}</span>
+            <span class="mi-meta">${s.message_count} ${t("chat_msgs")} · ${esc((s.updated_at || "").slice(0, 16).replace("T", " "))}</span>
+          </div>`).join("")
+      : `<div class="chat-empty">${t("chat_no_sessions")}</div>`;
+    overlay.innerHTML = `
+      <div class="modal">
+        <h3>${t("chat_load_title")}</h3>
+        <div class="modal-list">${items}</div>
+        <div class="modal-actions"><button class="btn" id="modal-close">${t("chat_close")}</button></div>
+      </div>`;
+    const close = () => overlay.remove();
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector("#modal-close").addEventListener("click", close);
+    overlay.querySelectorAll(".modal-item").forEach((it) => {
+      it.addEventListener("click", () => { loadSession(it.dataset.id); close(); });
+    });
+    document.body.appendChild(overlay);
+  }
+  async function loadSession(sessionId) {
+    let messages = [];
+    try { messages = await getJSON(`/api/chat/sessions/${encodeURIComponent(sessionId)}`); }
+    catch (e) { return; }
+    chatSession = sessionId;
+    chatTokens = 0;
+    const log = chatLog();
+    log.innerHTML = "";
+    messages.forEach((m) => {
+      if (m.role === "user") {
+        addUserBubble(m.content);
+      } else {
+        const role = m.agent_id || "coder";
+        const meta = META[role] || { accent: "blue" };
+        const msg = el("div", "chat-msg agent");
+        msg.dataset.accent = meta.accent;
+        msg.innerHTML = `
+          <div class="who" style="color:var(--${meta.accent})">
+            <img src="${avatarFor(role)}" alt="">${roleLabel(role)}</div>
+          <div class="chat-bubble">${mdLite(m.content)}</div>`;
+        if (m.tokens_used) msg.appendChild(el("div", "chat-tok", `${m.tokens_used} ${t("chat_tokens")}`));
+        log.appendChild(msg);
+        chatTokens += m.tokens_used || 0;
+      }
+    });
+    chatShowEmptyIfNeeded();
+    renderChatStatus();
+    chatScroll();
+  }
+
+  function wireChat() {
+    const send = $("#chat-send");
+    const ta = $("#chat-text");
+    if (send) send.addEventListener("click", sendChat);
+    if (ta) {
+      ta.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendChat(); }
+      });
+    }
+    const modeBtn = $("#chat-mode");
+    if (modeBtn) modeBtn.addEventListener("click", toggleMode);
+    const clearBtn = $("#chat-clear");
+    if (clearBtn) clearBtn.addEventListener("click", clearChat);
+    const exportBtn = $("#chat-export");
+    if (exportBtn) exportBtn.addEventListener("click", exportChat);
+    const loadBtn = $("#chat-load");
+    if (loadBtn) loadBtn.addEventListener("click", openSessionsModal);
+
+    // Global shortcuts, active only while the chat view is visible.
+    document.addEventListener("keydown", (e) => {
+      const chatVisible = !document.querySelector('.view[data-view="chat"]').classList.contains("hidden");
+      if (!chatVisible || !(e.ctrlKey || e.metaKey)) {
+        if (e.key === "Escape" && chatVisible) cancelChat();
+        return;
+      }
+      const k = e.key.toLowerCase();
+      if (k === "l") { e.preventDefault(); clearChat(); }
+      else if (k === "s") { e.preventDefault(); exportChat(); }
+      else if (k === "t") { e.preventDefault(); toggleMode(); }
+    });
+  }
+
   // ─── view router ─────────────────────────────────────────
   // Sidebar items carry data-view; clicking one shows the matching
   // <div class="view" data-view="..."> in the center column and marks
@@ -406,9 +758,13 @@
   });
 
   wireNav();
+  wireChat();
   applyTheme();
   applyLang();
   getJSON("/api/config").then((c) => { serverConfig = c; renderSettings(); }).catch(() => {});
+  populateChatAgents();
+  chatShowEmptyIfNeeded();
+  connectChatWs();
   refreshSlow();
   refreshMetrics();
   connectWS();

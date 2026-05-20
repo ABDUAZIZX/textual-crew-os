@@ -55,6 +55,7 @@
     <!-- Sidebar -->
     <nav class="sidebar">
       <div class="nav-item active" data-view="overview" role="button" tabindex="0"><span>🏠</span><span data-i18n="overview">Overview</span></div>
+      <div class="nav-item" data-view="chat" role="button" tabindex="0"><span>💬</span><span data-i18n="team_chat">Team Chat</span></div>
       <div class="nav-section" data-i18n="agents">Agents</div>
       <div id="nav-agents"></div>
       <div class="nav-section" data-i18n="system">System</div>
@@ -138,6 +139,26 @@
         <section class="panel">
           <div class="panel-head"><h3 data-i18n="settings">Settings</h3></div>
           <div id="settings-body"></div>
+        </section>
+      </div>
+
+      <!-- Team Chat -->
+      <div class="view hidden" data-view="chat">
+        <section class="panel chat-panel">
+          <div class="chat-bar">
+            <select id="chat-agent" title="Agent"></select>
+            <button class="btn" id="chat-mode" type="button"></button>
+            <button class="btn" id="chat-load" type="button">📂 <span data-i18n="chat_load">Load session</span></button>
+            <button class="btn" id="chat-export" type="button">⬇️ <span data-i18n="chat_export">Export</span></button>
+            <button class="btn" id="chat-clear" type="button">🗑️ <span data-i18n="chat_clear">Clear</span></button>
+            <span class="chat-conn" id="chat-conn"><span class="dot"></span><span id="chat-conn-label"></span></span>
+          </div>
+          <div class="chat-log" id="chat-log"></div>
+          <div class="chat-input">
+            <textarea id="chat-text" rows="3" data-i18n-ph="chat_placeholder"></textarea>
+            <button class="btn primary" id="chat-send" type="button" data-i18n="chat_send">Send</button>
+          </div>
+          <div class="chat-status" id="chat-status"></div>
         </section>
       </div>
     </main>
