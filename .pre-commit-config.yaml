@@ -13,12 +13,26 @@ repos:
         args: ["--fix=lf"]
       - id: check-merge-conflict
 
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.5.0
+  # ruff runs from the project venv (local hook). The upstream hook was
+  # pinned at v0.5.0, which does not know newer rule selectors used in
+  # pyproject (e.g. ASYNC240) and failed to parse the config. The venv
+  # ruff matches the version the config targets.
+  - repo: local
     hooks:
       - id: ruff
-        args: [--fix, --exit-non-zero-on-fix]
+        name: ruff (project venv)
+        entry: .venv/bin/ruff
+        language: system
+        args: ["check", "--fix", "--exit-non-zero-on-fix", "--force-exclude"]
+        types_or: [python, pyi]
+        require_serial: true
       - id: ruff-format
+        name: ruff-format (project venv)
+        entry: .venv/bin/ruff
+        language: system
+        args: ["format", "--force-exclude"]
+        types_or: [python, pyi]
+        require_serial: true
 
   # mypy runs from the project venv (local hook) so it sees the real
   # runtime deps (click, fastapi, httpx, ...). The upstream mirror ran
