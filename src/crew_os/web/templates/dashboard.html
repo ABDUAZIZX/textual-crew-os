@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Crew Control Center</title>
+  <link rel="icon" href="/static/avatars/supervisor.svg">
+  <link rel="stylesheet" href="/static/css/dashboard.css">
+</head>
+<body>
+  <!-- Top bar -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo"><img src="/static/avatars/supervisor.svg" width="26" height="26" alt=""></span>
+      <div>
+        <h1>Textual Crew OS</h1>
+        <div class="ver">v1.0.0-local</div>
+      </div>
+    </div>
+    <div class="title-block">
+      <h2><span data-i18n="title">Crew Control Center</span>
+        <span class="status-dot running" id="status-dot"></span>
+        <span class="status-pill" id="status-pill" data-i18n="running">Running</span>
+      </h2>
+      <p data-i18n="subtitle">Real-time overview of all agents and system activity</p>
+    </div>
+    <div class="stat-group">
+      <div class="stat"><div class="k" data-i18n="tasks">Tasks</div><div class="v" id="t-tasks">0 / 0</div></div>
+      <div class="stat"><div class="k" data-i18n="tokens">Tokens</div><div class="v accent" id="t-tokens">0</div></div>
+      <div class="stat"><div class="k">GPU</div><div class="v" id="t-gpu">—</div></div>
+      <div class="stat"><div class="k" data-i18n="uptime">Uptime</div><div class="v" id="t-uptime">00:00:00</div></div>
+    </div>
+    <div class="topbar-actions">
+      <button class="btn" id="lang-toggle" title="Language">🌐 <span id="lang-label">EN</span></button>
+      <button class="btn" id="theme-toggle" title="Theme">◐</button>
+    </div>
+  </header>
+
+  <!-- Usage credits bar -->
+  <div class="usage-bar">
+    <span class="label" data-i18n="usage_credits">Usage Credits</span>
+    <div class="usage-window">
+      <span class="label" data-i18n="current_session">Current Session</span>
+      <span class="amount" id="usage-session">0 tok · <span class="cost">$0.00</span></span>
+    </div>
+    <div class="usage-sep"></div>
+    <div class="usage-window">
+      <span class="label" data-i18n="current_week">Current Week (all models)</span>
+      <span class="amount" id="usage-week">0 tok · <span class="cost">$0.00</span></span>
+    </div>
+    <div class="usage-models" id="usage-models"></div>
+  </div>
+
+  <div class="layout">
+    <!-- Sidebar -->
+    <nav class="sidebar">
+      <div class="nav-item active"><span>🏠</span><span data-i18n="overview">Overview</span></div>
+      <div class="nav-section" data-i18n="agents">Agents</div>
+      <div id="nav-agents"></div>
+      <div class="nav-section" data-i18n="system">System</div>
+      <div class="nav-item"><span>📈</span><span data-i18n="live_activity">Live Activity</span></div>
+      <div class="nav-item"><span>📜</span><span data-i18n="audit_logs">Audit Logs</span></div>
+      <div class="nav-item"><span>📊</span><span data-i18n="stats_metrics">Stats &amp; Metrics</span></div>
+      <div class="nav-item"><span>⚙️</span><span data-i18n="settings">Settings</span></div>
+      <div class="sidebar-user">
+        <span>👤</span>
+        <div>
+          <div class="uname" data-i18n="user">User</div>
+          <div class="ustatus">● <span data-i18n="online">Online</span> · CLI Local</div>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Center -->
+    <main class="center">
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h3 data-i18n="network_map">Agent Network Map</h3>
+            <p data-i18n="network_sub">Real-time agent status and communication</p>
+          </div>
+        </div>
+        <div class="agent-grid" id="agent-grid"></div>
+        <div class="legend">
+          <span class="lg-blue"><i></i><span data-i18n="task_delegation">Task Delegation</span></span>
+          <span class="lg-green"><i></i><span data-i18n="security_check">Security Check</span></span>
+          <span class="lg-purple"><i></i><span data-i18n="audit_report">Audit &amp; Report</span></span>
+          <span class="lg-yellow"><i></i><span data-i18n="offensive_testing">Offensive Testing</span></span>
+          <span class="lg-gray"><i></i><span data-i18n="data_flow">Data Flow</span></span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h3 data-i18n="agent_details">Agent Details</h3>
+          <div class="tabs" id="detail-tabs">
+            <div class="tab active" data-tab="task" data-i18n="current_task">Current Task</div>
+            <div class="tab" data-tab="caps" data-i18n="capabilities">Capabilities</div>
+            <div class="tab" data-tab="metrics" data-i18n="metrics">Metrics</div>
+            <div class="tab" data-tab="logs" data-i18n="logs">Logs</div>
+          </div>
+        </div>
+        <div class="details-body">
+          <div class="detail-id" id="detail-id"></div>
+          <div id="detail-content"></div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Right rail -->
+    <aside class="rail">
+      <section class="panel">
+        <div class="panel-head">
+          <h3 data-i18n="activity_feed">Live Activity Feed</h3>
+          <span class="section-link" data-i18n="view_all">View All</span>
+        </div>
+        <div class="feed" id="feed"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h3 data-i18n="system_stats">System Stats</h3></div>
+        <div class="stats-grid">
+          <div class="stat-card"><div class="sc-head"><span data-i18n="cpu_usage">CPU Usage</span><span class="sc-val" id="sc-cpu">0%</span></div><canvas id="spark-cpu"></canvas></div>
+          <div class="stat-card"><div class="sc-head"><span data-i18n="ram_usage">RAM Usage</span><span class="sc-val" id="sc-ram">0</span></div><canvas id="spark-ram"></canvas></div>
+          <div class="stat-card"><div class="sc-head"><span data-i18n="gpu_usage">GPU Usage</span><span class="sc-val" id="sc-gpu">0%</span></div><canvas id="spark-gpu"></canvas></div>
+          <div class="stat-card"><div class="sc-head"><span data-i18n="power">Power</span><span class="sc-val" id="sc-pwr">—</span></div><canvas id="spark-pwr"></canvas></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h3 data-i18n="comm_bus">Communication Bus</h3>
+          <span class="section-link" data-i18n="view_all">View All</span>
+        </div>
+        <div class="cbus" id="cbus"></div>
+      </section>
+    </aside>
+  </div>
+
+  <!-- Bottom bar -->
+  <footer class="bottombar">
+    <div class="bb"><span style="color:var(--green)">✚</span><span class="bb-k" data-i18n="system_healthy">System Healthy</span><span class="bb-v" data-i18n="all_operational">All Systems Operational</span></div>
+    <div class="bb"><span>🛡️</span><span class="bb-k" data-i18n="local_mode">Local Mode</span><span class="bb-v" id="bb-mode" data-i18n="no_external">No external API calls</span></div>
+    <div class="bb"><span>📝</span><span class="bb-k" data-i18n="audit_logging">Audit Logging</span><span class="bb-v" data-i18n="enabled_append">Enabled (append-only)</span></div>
+    <div class="live"><span class="status-dot running"></span><span data-i18n="live">Live</span> · <span id="bb-updated">—</span></div>
+  </footer>
+
+  <script src="/static/js/i18n.js"></script>
+  <script src="/static/js/dashboard.js"></script>
+</body>
+</html>

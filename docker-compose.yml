@@ -1,0 +1,34 @@
+# Platform-only deployment. Ollama runs on the host as a systemd service;
+# this container reaches it over the host loopback via host networking.
+#
+# Usage:
+#   docker compose up --build
+#   open http://127.0.0.1:8765
+#
+# Notes:
+# - network_mode: host lets CREW_OLLAMA_HOST=127.0.0.1:11434 reach the
+#   host Ollama, and binds the dashboard on the host's loopback.
+# - The Coder sandbox (bubblewrap) needs user namespaces. If sandboxed
+#   execution fails inside the container, allow unprivileged userns or
+#   relax seccomp:  security_opt: ["seccomp=unconfined"]  (trade-off).
+
+services:
+  crew:
+    build: .
+    image: textual-crew-os
+    network_mode: host
+    environment:
+      CREW_DATA_DIR: /data
+      CREW_OLLAMA_HOST: http://127.0.0.1:11434
+      CREW_WEB_HOST: 127.0.0.1
+      CREW_WEB_PORT: "8765"
+      # CREW_ANTHROPIC_API_KEY: ${CREW_ANTHROPIC_API_KEY:-}
+    volumes:
+      - crew-data:/data
+    # Sandboxing needs userns; uncomment if bubblewrap fails in-container:
+    # security_opt:
+    #   - seccomp=unconfined
+    restart: unless-stopped
+
+volumes:
+  crew-data:
