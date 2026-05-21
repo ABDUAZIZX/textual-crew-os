@@ -19,7 +19,7 @@ from crew_os.core.models import AgentRole, Task
 from crew_os.core.policy import PolicyEngine
 from crew_os.llm.ollama_client import ChatStreamPiece
 from crew_os.memory.chat_store import ChatStore
-from crew_os.orchestration.chat import ChatService
+from crew_os.orchestration.chat import ChatService, _ThinkFilter
 from crew_os.orchestration.registry import AgentRegistry
 from crew_os.security.audit import AuditLogger
 from crew_os.security.rate_limit import RateLimiter
@@ -248,3 +248,32 @@ async def test_audit_records_chat_events(tmp_path: Path, chat_store: ChatStore) 
     ]
     types = [r.event["type"] for r in auditor.iter_records()]
     assert "agent_message" in types
+
+
+# ── <think> stream filtering (qwen3 et al.) ──────────────────────────
+
+
+def test_think_filter_strips_complete_block() -> None:
+    f = _ThinkFilter()
+    assert f.feed("<think>reasoning here</think>the answer") == "the answer"
+    assert f.flush() == ""
+
+
+def test_think_filter_passthrough_without_tags() -> None:
+    f = _ThinkFilter()
+    assert f.feed("plain text ") == "plain text "
+    assert f.feed("more") == "more"
+    assert f.flush() == ""
+
+
+def test_think_filter_handles_tags_split_across_pieces() -> None:
+    f = _ThinkFilter()
+    chunks = ["Hello <thi", "nk>hidden rea", "soning</thin", "k>World"]
+    out = "".join(f.feed(c) for c in chunks) + f.flush()
+    assert out == "Hello World"
+
+
+def test_think_filter_flush_emits_trailing_partial_open() -> None:
+    f = _ThinkFilter()
+    assert f.feed("answer<thi") == "answer"  # partial tag held back
+    assert f.flush() == "<thi"  # never completed -> emitted as-is at end

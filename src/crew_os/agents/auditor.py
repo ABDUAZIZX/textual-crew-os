@@ -26,7 +26,7 @@ from crew_os.security.audit import AuditLogger
 from crew_os.security.rate_limit import RateLimiter
 from crew_os.security.subprocess_safe import run_safe
 
-DEFAULT_AUDITOR_MODEL = "llama3.1:8b-instruct-q4_K_M"
+DEFAULT_AUDITOR_MODEL = "qwen3:8b"
 _PROBE_RE = re.compile(r"^[A-Za-z0-9_.]+$")
 _MODEL_RE = re.compile(r"^[A-Za-z0-9_.:\-/]+$")
 

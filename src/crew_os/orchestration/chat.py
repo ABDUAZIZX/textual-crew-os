@@ -67,6 +67,67 @@ _NON_CHAT_ROLES = frozenset({AgentRole.SUPERVISOR_T1, AgentRole.SUPERVISOR_T2})
 _RATE_KEY = "chat"
 
 
+class _ThinkFilter:
+    """Incrementally strip ``<think>...</think>`` spans from a token stream.
+
+    Reasoning models (e.g. qwen3) emit their chain-of-thought inside
+    ``<think>`` tags before the answer. We let the model think (better
+    answers) but hide the trace from the chat. Tags may be split across
+    streamed pieces, so a possible partial tag is held back at each
+    boundary and resolved once more text arrives.
+    """
+
+    _OPEN = "<think>"
+    _CLOSE = "</think>"
+
+    def __init__(self) -> None:
+        self._buf = ""
+        self._inside = False
+
+    @staticmethod
+    def _suffix_overlap(text: str, tag: str) -> int:
+        """Longest suffix of ``text`` that is a prefix of ``tag``."""
+
+        for k in range(min(len(text), len(tag) - 1), 0, -1):
+            if text.endswith(tag[:k]):
+                return k
+        return 0
+
+    def feed(self, text: str) -> str:
+        self._buf += text
+        out: list[str] = []
+        while self._buf:
+            if self._inside:
+                idx = self._buf.find(self._CLOSE)
+                if idx == -1:
+                    keep = self._suffix_overlap(self._buf, self._CLOSE)
+                    self._buf = self._buf[len(self._buf) - keep :] if keep else ""
+                    break
+                self._buf = self._buf[idx + len(self._CLOSE) :]
+                self._inside = False
+            else:
+                idx = self._buf.find(self._OPEN)
+                if idx == -1:
+                    keep = self._suffix_overlap(self._buf, self._OPEN)
+                    cut = len(self._buf) - keep
+                    out.append(self._buf[:cut])
+                    self._buf = self._buf[cut:]
+                    break
+                out.append(self._buf[:idx])
+                self._buf = self._buf[idx + len(self._OPEN) :]
+                self._inside = True
+        return "".join(out)
+
+    def flush(self) -> str:
+        """Emit any trailing text left buffered when the stream ends."""
+
+        if self._inside:
+            return ""
+        rest = self._buf
+        self._buf = ""
+        return rest
+
+
 class ChatFrame(BaseModel):
     """A single streamed frame sent to the chat client."""
 
@@ -217,18 +278,25 @@ class ChatService:
         yield ChatFrame(type="start", agent=role.value, session_id=session_id)
         parts: list[str] = []
         tokens = 0
+        think = _ThinkFilter()  # hide <think> traces (qwen3 et al.) from the stream
         try:
             async for piece in self._models.chat_stream(agent.model, messages):
                 if piece.content:
-                    parts.append(piece.content)
-                    yield ChatFrame(
-                        type="token",
-                        agent=role.value,
-                        session_id=session_id,
-                        content=piece.content,
-                    )
+                    visible = think.feed(piece.content)
+                    if visible:
+                        parts.append(visible)
+                        yield ChatFrame(
+                            type="token",
+                            agent=role.value,
+                            session_id=session_id,
+                            content=visible,
+                        )
                 if piece.done and piece.eval_count is not None:
                     tokens = piece.eval_count
+            tail = think.flush()
+            if tail:
+                parts.append(tail)
+                yield ChatFrame(type="token", agent=role.value, session_id=session_id, content=tail)
         except CrewOSError as exc:
             await self._audit(role, {"session": session_id, "error": str(exc)}, Severity.ERROR)
             yield ChatFrame(type="error", agent=role.value, session_id=session_id, content=str(exc))
