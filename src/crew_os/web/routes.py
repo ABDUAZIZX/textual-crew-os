@@ -6,7 +6,11 @@ never stale). System/GPU metrics come from the cached sampler snapshot.
 
 from __future__ import annotations
 
+import asyncio
+import json
 import time
+from collections import deque
+from pathlib import Path
 from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException, Request
@@ -119,3 +123,38 @@ async def get_config(request: Request) -> dict[str, Any]:
         "anthropic_model": s.anthropic_model,
         "data_dir": str(s.data_dir),
     }
+
+
+def _read_audit_tail(path: Path, limit: int) -> list[dict[str, Any]]:
+    """Return the last ``limit`` audit records, summarised. Memory-bounded."""
+
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    with path.open(encoding="utf-8") as f:
+        for raw in deque(f, maxlen=limit):
+            line = raw.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            event = rec.get("event", {})
+            rows.append(
+                {
+                    "seq": rec.get("seq"),
+                    "ts": rec.get("ts"),
+                    "type": event.get("type"),
+                    "severity": event.get("severity"),
+                    "agent": event.get("agent_role"),
+                }
+            )
+    return rows
+
+
+@router.get("/audit")
+async def get_audit(request: Request, limit: int = 100) -> list[dict[str, Any]]:
+    limit = max(1, min(limit, 1000))
+    path = _settings(request).data_dir / "audit" / "audit.jsonl"
+    return await asyncio.to_thread(_read_audit_tail, path, limit)

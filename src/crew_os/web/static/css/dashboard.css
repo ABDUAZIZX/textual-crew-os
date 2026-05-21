@@ -343,3 +343,30 @@ body { display: flex; flex-direction: column; min-height: 100vh; }
 .modal-item .mi-title { color: var(--text-bright); }
 .modal-item .mi-meta { color: var(--muted); font-size: 11px; white-space: nowrap; }
 .modal-actions { margin-top: 14px; display: flex; justify-content: flex-end; }
+
+/* ─── Live Activity / Audit views (fill + scroll) ─────────── */
+.center > .view[data-view="live-activity"],
+.center > .view[data-view="audit-logs"] { flex: 1 1 auto; min-height: 0; }
+.view[data-view="live-activity"] .panel,
+.view[data-view="audit-logs"] .panel { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+#live-activity-body, #audit-logs-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+
+.la-row { display: flex; gap: 12px; padding: 7px 8px; border-bottom: 1px solid var(--border-soft); font-size: 12px; align-items: baseline; }
+.la-time { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.la-tag { font-weight: 600; min-width: 130px; }
+.la-text { color: var(--text); word-break: break-word; }
+
+.audit-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.audit-table th { text-align: start; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--panel); }
+.audit-table td { padding: 6px 8px; border-bottom: 1px solid var(--border-soft); font-variant-numeric: tabular-nums; }
+.sev-warning { color: var(--yellow); }
+.sev-error, .sev-critical { color: var(--red); }
+.sev-debug { color: var(--muted); }
+
+/* ─── Stats view ──────────────────────────────────────────── */
+.stats-detail { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.stat-big { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+.stat-big .sb-k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+.stat-big .sb-v { font-size: 22px; color: var(--text-bright); font-weight: 600; margin-top: 4px; }
+.stat-big canvas { width: 100%; height: 54px; margin-top: 8px; display: block; }
+.stat-big .sb-sub { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.5; }

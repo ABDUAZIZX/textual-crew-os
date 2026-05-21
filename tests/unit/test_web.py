@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from crew_os.orchestration.registry import AgentRegistry
 from crew_os.security.audit import AuditLogger
 from crew_os.security.rate_limit import RateLimiter
 from crew_os.web.app import create_app
+from crew_os.web.routes import _read_audit_tail
 
 
 class _Agent(BaseAgent):
@@ -169,6 +171,50 @@ async def test_config_endpoint_exposes_safe_subset(client: httpx.AsyncClient) ->
     assert "anthropic_api_key" not in body
     assert "api_key" not in body
     assert all("secret" not in k.lower() for k in body)
+
+
+async def test_audit_endpoint_returns_list(client: httpx.AsyncClient) -> None:
+    resp = await client.get("/api/audit?limit=5")
+    assert resp.status_code == 200
+    assert isinstance(resp.json(), list)
+
+
+def _audit_line(seq: int, etype: str, severity: str, agent: str | None) -> str:
+    return json.dumps(
+        {
+            "seq": seq,
+            "ts": f"t{seq}",
+            "event": {"type": etype, "severity": severity, "agent_role": agent},
+        }
+    )
+
+
+def test_read_audit_tail_summarises_and_bounds(tmp_path: Path) -> None:
+    path = tmp_path / "audit.jsonl"
+    lines = [
+        _audit_line(0, "task_created", "info", "coder"),
+        "not json - skipped",
+        _audit_line(1, "agent_message", "info", None),
+        _audit_line(2, "rate_limited", "warning", "auditor"),
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    # limit=4 keeps all lines; the malformed one is parsed-and-skipped.
+    rows = _read_audit_tail(path, limit=4)
+    assert len(rows) == 3
+    assert rows[-1] == {
+        "seq": 2,
+        "ts": "t2",
+        "type": "rate_limited",
+        "severity": "warning",
+        "agent": "auditor",
+    }
+    # limit bounds the tail.
+    assert [r["seq"] for r in _read_audit_tail(path, limit=1)] == [2]
+
+
+def test_read_audit_tail_missing_file(tmp_path: Path) -> None:
+    assert _read_audit_tail(tmp_path / "nope.jsonl", limit=10) == []
 
 
 async def test_chat_ws_route_registered(client: httpx.AsyncClient) -> None:

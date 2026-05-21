@@ -52,6 +52,11 @@
   let chatTokens = 0;           // tokens accumulated this session
   const chatBubbles = {};       // role -> { el, parts: [] } while streaming
 
+  // system views state
+  let lastMetrics = null;
+  let lastStatus = null;
+  const liveEvents = [];        // capped buffer of WS frames for Live Activity
+
   // ─── i18n ────────────────────────────────────────────────
   function t(key) {
     const dict = window.I18N[lang] || window.I18N.en;
@@ -240,6 +245,7 @@
 
   function renderMetrics(m) {
     if (!m) return;
+    lastMetrics = m;
     pushHistory("cpu", m.system.cpu_percent);
     pushHistory("ram", m.system.ram_percent);
     pushHistory("gpu", m.gpu.available ? m.gpu.utilization_percent : 0);
@@ -254,10 +260,12 @@
     drawSpark($("#spark-gpu"), histories.gpu, "#34d399");
     drawSpark($("#spark-pwr"), histories.pwr, "#facc15");
     $("#bb-updated").textContent = nowTime();
+    updateStats();
   }
 
   function renderStatus(s) {
     if (!s) return;
+    lastStatus = s;
     $("#t-tasks").textContent = `${s.tasks_completed} / ${s.tasks_total}`;
     $("#t-uptime").textContent = fmtUptime(s.uptime_seconds);
     const running = s.status === "running";
@@ -287,6 +295,7 @@
       renderDetails();
     } catch (e) { /* backend not ready */ }
     try { renderUsage(await getJSON("/api/usage")); } catch (e) {}
+    if (isVisible("audit-logs")) refreshAudit();
   }
   async function refreshMetrics() {
     try { renderMetrics(await getJSON("/api/metrics")); } catch (e) {}
@@ -301,6 +310,7 @@
     ws.onopen = () => { wsBackoff = 1000; };
     ws.onmessage = (ev) => {
       let msg; try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      pushLive(msg);
       if (msg.type === "Task" && msg.data) {
         const idx = tasks.findIndex((x) => x.id === msg.data.id);
         if (idx >= 0) tasks[idx] = msg.data; else tasks.push(msg.data);
@@ -717,6 +727,114 @@
     });
   }
 
+  // ─── system views: live activity / audit / stats ────────
+  function isVisible(view) {
+    const v = document.querySelector(`.view[data-view="${view}"]`);
+    return v && !v.classList.contains("hidden");
+  }
+
+  function pushLive(frame) {
+    if (!frame || frame.type === "snapshot") return;
+    liveEvents.push({ at: nowTime(), type: frame.type, data: frame.data });
+    if (liveEvents.length > 200) liveEvents.shift();
+    if (isVisible("live-activity")) renderLiveActivity();
+  }
+  function renderLiveActivity() {
+    const box = $("#live-activity-body");
+    if (!box) return;
+    if (liveEvents.length === 0) {
+      box.innerHTML = `<p style="color:var(--muted)">${t("live_empty")}</p>`;
+      return;
+    }
+    box.innerHTML = liveEvents
+      .map((e) => {
+        let text = e.type;
+        let role = "";
+        if (e.type === "Task" && e.data) {
+          role = e.data.assigned_to || "";
+          text = `${e.data.status}: ${e.data.description}`;
+        }
+        const meta = META[role] || { accent: "blue" };
+        const label = role ? roleLabel(role) : e.type;
+        return `<div class="la-row"><span class="la-time">${e.at}</span>
+          <span class="la-tag" style="color:var(--${meta.accent})">${esc(label)}</span>
+          <span class="la-text">${esc(text)}</span></div>`;
+      })
+      .join("");
+    box.scrollTop = box.scrollHeight;
+  }
+
+  async function refreshAudit() {
+    const box = $("#audit-logs-body");
+    if (!box) return;
+    let rows = [];
+    try { rows = await getJSON("/api/audit?limit=200"); } catch (e) { return; }
+    if (rows.length === 0) {
+      box.innerHTML = `<p style="color:var(--muted)">${t("audit_empty")}</p>`;
+      return;
+    }
+    const head =
+      `<tr><th>${t("audit_seq")}</th><th>${t("audit_time")}</th><th>${t("audit_type")}</th>` +
+      `<th>${t("audit_severity")}</th><th>${t("audit_agent")}</th></tr>`;
+    const body = rows
+      .slice()
+      .reverse()
+      .map(
+        (r) =>
+          `<tr><td>${r.seq}</td><td>${esc((r.ts || "").slice(11, 19))}</td>` +
+          `<td>${esc(r.type || "")}</td>` +
+          `<td class="sev-${esc(r.severity || "")}">${esc(r.severity || "")}</td>` +
+          `<td>${esc(r.agent || "—")}</td></tr>`
+      )
+      .join("");
+    box.innerHTML = `<table class="audit-table"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+  }
+
+  function ensureStatsSkeleton() {
+    const box = $("#stats-body");
+    if (!box || box.dataset.built) return;
+    box.dataset.built = "1";
+    box.innerHTML = `
+      <div class="stats-detail">
+        <div class="stat-big"><div class="sb-k">${t("cpu_usage")}</div><div class="sb-v" id="sb-cpu">—</div><canvas id="lg-cpu"></canvas></div>
+        <div class="stat-big"><div class="sb-k">${t("ram_usage")}</div><div class="sb-v" id="sb-ram">—</div><canvas id="lg-ram"></canvas></div>
+        <div class="stat-big"><div class="sb-k">${t("gpu_usage")}</div><div class="sb-v" id="sb-gpu">—</div><canvas id="lg-gpu"></canvas></div>
+        <div class="stat-big"><div class="sb-k">${t("power")}</div><div class="sb-v" id="sb-pwr">—</div><canvas id="lg-pwr"></canvas></div>
+        <div class="stat-big"><div class="sb-k">GPU</div><div class="sb-v" id="sb-gpuname" style="font-size:14px">—</div><div class="sb-sub" id="sb-gpudetail"></div></div>
+        <div class="stat-big"><div class="sb-k">${t("system")}</div><div class="sb-v" id="sb-sys" style="font-size:16px">—</div><div class="sb-sub" id="sb-sysdetail"></div></div>
+      </div>`;
+  }
+  function updateStats() {
+    if (!isVisible("stats")) return;
+    ensureStatsSkeleton();
+    const m = lastMetrics;
+    if (m) {
+      $("#sb-cpu").textContent = m.system.cpu_percent.toFixed(0) + "%";
+      $("#sb-ram").textContent =
+        `${(m.system.ram_used_mb / 1024).toFixed(1)} / ${(m.system.ram_total_mb / 1024).toFixed(0)} GB`;
+      $("#sb-gpu").textContent = m.gpu.available ? m.gpu.utilization_percent + "%" : "N/A";
+      $("#sb-pwr").textContent = m.gpu_watts != null ? m.gpu_watts.toFixed(0) + " W" : "—";
+      drawSpark($("#lg-cpu"), histories.cpu, "#60a5fa");
+      drawSpark($("#lg-ram"), histories.ram, "#c084fc");
+      drawSpark($("#lg-gpu"), histories.gpu, "#34d399");
+      drawSpark($("#lg-pwr"), histories.pwr, "#facc15");
+      if (m.gpu.available) {
+        $("#sb-gpuname").textContent = m.gpu.name || "GPU";
+        $("#sb-gpudetail").textContent =
+          `${t("gpu_vram")}: ${(m.gpu.vram_used_mb / 1024).toFixed(1)} / ${(m.gpu.vram_total_mb / 1024).toFixed(1)} GB · ${t("gpu_temp")}: ${m.gpu.temperature_c}°C`;
+      } else {
+        $("#sb-gpuname").textContent = "N/A";
+        $("#sb-gpudetail").textContent = "";
+      }
+    }
+    if (lastStatus) {
+      $("#sb-sys").textContent = fmtUptime(lastStatus.uptime_seconds);
+      $("#sb-sysdetail").textContent =
+        `${t("uptime")} · ${lastStatus.tasks_completed}/${lastStatus.tasks_total} ${t("tasks")} · ` +
+        `${lastStatus.agents_online} ${t("agents")}`;
+    }
+  }
+
   // ─── view router ─────────────────────────────────────────
   // Sidebar items carry data-view; clicking one shows the matching
   // <div class="view" data-view="..."> in the center column and marks
@@ -728,6 +846,10 @@
     document.querySelectorAll(".sidebar .nav-item[data-view]").forEach((n) => {
       n.classList.toggle("active", n.dataset.view === name);
     });
+    // populate-on-open for the data-backed views
+    if (name === "live-activity") renderLiveActivity();
+    else if (name === "audit-logs") refreshAudit();
+    else if (name === "stats") updateStats();
   }
 
   function wireNav() {

@@ -56,6 +56,11 @@ window.I18N = {
     chat_tokens: "tokens", chat_load_title: "Load a previous session",
     chat_no_sessions: "No saved sessions yet.", chat_close: "Close",
     chat_msgs: "msgs", chat_busy: "waiting for replies…",
+    live_empty: "Waiting for activity… events appear here live.",
+    audit_empty: "No audit events yet.",
+    audit_seq: "Seq", audit_time: "Time", audit_type: "Event",
+    audit_severity: "Severity", audit_agent: "Agent",
+    gpu_vram: "VRAM", gpu_temp: "Temp",
   },
   ar: {
     title: "مركز التحكم بالطاقم",
@@ -112,5 +117,10 @@ window.I18N = {
     chat_tokens: "توكنز", chat_load_title: "تحميل جلسة سابقة",
     chat_no_sessions: "لا جلسات محفوظة بعد.", chat_close: "إغلاق",
     chat_msgs: "رسالة", chat_busy: "بانتظار الردود…",
+    live_empty: "بانتظار النشاط… تظهر الأحداث هنا مباشرة.",
+    audit_empty: "لا أحداث تدقيق بعد.",
+    audit_seq: "التسلسل", audit_time: "الوقت", audit_type: "الحدث",
+    audit_severity: "الخطورة", audit_agent: "الوكيل",
+    gpu_vram: "ذاكرة الرسوم", gpu_temp: "الحرارة",
   },
 };
