@@ -39,16 +39,14 @@ from crew_os.security.rate_limit import RateLimiter
 
 ChatMode = Literal["single", "crew"]
 
-# Concise chat personas, kept separate from the agents' task-handling
-# system prompts. Roles absent here fall back to a neutral assistant.
+# Per-role chat personas. A role MAY be absent: the defensive agent uses
+# the `crew-defender` custom Ollama model whose SYSTEM (and sampling
+# params) are baked in (see models/crew-defender.Modelfile), so we send
+# no system message for it and let the model's own SYSTEM apply.
 SYSTEM_PROMPTS: dict[AgentRole, str] = {
     AgentRole.CODER: (
         "You are a senior software engineer. Review and write correct, "
         "idiomatic, production-quality code. Be precise and technical."
-    ),
-    AgentRole.SEC_DEFENSIVE: (
-        "You are a defensive security engineer. Assess code and systems for "
-        "weaknesses, threat-model them, and recommend concrete hardening."
     ),
     AgentRole.SEC_OFFENSIVE: (
         "You are an authorized offensive security researcher in a controlled "
@@ -193,8 +191,11 @@ class ChatService:
         )
         await asyncio.to_thread(self._auditor.append, event)
 
-    def _system_for(self, role: AgentRole) -> str:
-        return SYSTEM_PROMPTS.get(role, "You are a helpful assistant.")
+    def _system_for(self, role: AgentRole) -> str | None:
+        """Chat system prompt for a role, or ``None`` to defer to the
+        model's own baked SYSTEM (e.g. the crew-defender custom model)."""
+
+        return SYSTEM_PROMPTS.get(role)
 
     async def _history_for(self, session_id: str, role: AgentRole) -> list[ChatMessage]:
         """User turns plus this agent's own replies, as chat messages."""
@@ -287,7 +288,9 @@ class ChatService:
             messages = await self._history_for(session_id, role)
         else:
             messages = [ChatMessage(role="user", content=prompt)]
-        messages = [ChatMessage(role="system", content=self._system_for(role)), *messages]
+        system = self._system_for(role)
+        if system:
+            messages = [ChatMessage(role="system", content=system), *messages]
 
         yield ChatFrame(type="start", agent=role.value, session_id=session_id)
         parts: list[str] = []

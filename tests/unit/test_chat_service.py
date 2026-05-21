@@ -155,7 +155,25 @@ async def test_crew_gives_each_agent_no_cross_history(
     svc = _service(tmp_path, chat_store, models=models)
     _ = [f async for f in svc.handle(session_id="s", mode="crew", role=None, content="q")]
     for _model, msgs in models.calls:
-        assert [role for role, _ in msgs] == ["system", "user"]
+        roles = [role for role, _ in msgs]
+        assert roles[-1] == "user"  # the current prompt
+        assert "assistant" not in roles  # no cross-agent history leaked
+        assert roles.count("user") == 1
+
+
+async def test_role_without_prompt_sends_no_system(tmp_path: Path, chat_store: ChatStore) -> None:
+    # SEC_DEFENSIVE has no entry in SYSTEM_PROMPTS -> no system message is
+    # sent, so the model's own baked SYSTEM (crew-defender) applies.
+    models = FakeModels()
+    svc = _service(tmp_path, chat_store, models=models)
+    _ = [
+        f
+        async for f in svc.handle(
+            session_id="s", mode="single", role=AgentRole.SEC_DEFENSIVE, content="hi"
+        )
+    ]
+    _model, msgs = models.calls[-1]
+    assert [role for role, _ in msgs] == ["user"]
 
 
 async def test_single_mode_includes_prior_history(tmp_path: Path, chat_store: ChatStore) -> None:

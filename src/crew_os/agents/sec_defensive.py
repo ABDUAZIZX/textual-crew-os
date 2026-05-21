@@ -17,7 +17,7 @@ from crew_os.llm.model_manager import ModelManager
 from crew_os.security.audit import AuditLogger
 from crew_os.security.rate_limit import RateLimiter
 
-DEFAULT_DEFENSIVE_MODEL = "llama3.1:8b-instruct-q4_K_M"
+DEFAULT_DEFENSIVE_MODEL = "crew-defender"
 DEFENSIVE_SYSTEM = (
     "You are a defensive security analyst. Identify vulnerabilities, "
     "misconfigurations, and hardening opportunities. Be concrete: name the "
