@@ -4,8 +4,14 @@ Local AI agents platform with a visual control dashboard, designed for
 a single workstation with an 8 GB GPU. Runs entirely on loopback;
 optional Claude API integration for high-complexity supervision.
 
-> **Status:** functional. Local agents, tiered supervision, live
-> dashboard, hardened security layer, and a `crew` CLI.
+> **Status:** functional (v1.1.0-local). Local agents, tiered supervision,
+> live dashboard, hardened security layer, and a `crew` CLI.
+
+<!-- Screenshot placeholder: add a dashboard capture at docs/screenshot.png -->
+![Crew Control Center dashboard](docs/screenshot.png)
+
+> _Screenshot placeholder — drop a capture of the dashboard at
+> `docs/screenshot.png` (the live agent network + GPU/CPU/power panels)._
 
 ## What It Does
 
@@ -17,18 +23,49 @@ optional Claude API integration for high-complexity supervision.
   task progress, GPU/CPU/RAM/power, and inter-agent traffic.
 - Hard-isolates an offensive-research agent behind a multi-gate LAB_MODE.
 
-## Quick Start (after Stage 0)
+## Quick Start
+
+The installer is idempotent: it creates a venv, installs the package, wires
+up Ollama (asking before it installs anything), and pulls the models named in
+`.env`. Everything stays on loopback by default.
 
 ```bash
-git clone <repo> textual-crew-os && cd textual-crew-os
-python3.11 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
+git clone https://github.com/azoz8/textual-crew-os.git
+cd textual-crew-os
+./install.sh                 # add --dev for test/lint tooling
+source .venv/bin/activate
+crew dashboard               # open http://127.0.0.1:8765
+```
 
+If you prefer to do it by hand:
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
 cp .env.example .env
 python scripts/check_env.py        # verify Ollama, GPU, models
 ```
 
 If `check_env.py` reports `Status: OK`, the host is ready.
+
+### بدء سريع (عربي)
+
+```bash
+# 1) استنساخ المشروع
+git clone https://github.com/azoz8/textual-crew-os.git
+cd textual-crew-os
+
+# 2) تشغيل المُثبّت (يُنشئ venv، يُثبّت الحزم، يربط Ollama، يسحب الموديلات)
+./install.sh
+
+# 3) تفعيل البيئة وتشغيل لوحة التحكم
+source .venv/bin/activate
+crew dashboard               # افتح http://127.0.0.1:8765
+```
+
+المُثبّت **لا** يُثبّت Ollama دون أن يعرض لك الأمر ويطلب تأكيدك أولاً، ولا
+يفتح المنفذ على الشبكة (loopback فقط). راجع `.env` قبل أول تشغيل لضبط
+`CREW_ANTHROPIC_API_KEY` (اختياري) أو مسار البيانات.
 
 ## CLI
 

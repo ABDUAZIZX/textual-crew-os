@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+from crew_os import __version__
 from crew_os.cli import composition, main
 from crew_os.core.models import (
     AgentRole,
@@ -51,7 +52,7 @@ def test_help(runner: CliRunner) -> None:
 def test_version(runner: CliRunner) -> None:
     result = runner.invoke(main.cli, ["--version"])
     assert result.exit_code == 0
-    assert "0.1.0" in result.output
+    assert __version__ in result.output
 
 
 # ─────────────────────────────── run (mocked crew) ─────────────────────

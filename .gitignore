@@ -45,8 +45,12 @@ htmlcov/
 .env
 .env.local
 .env.*.local
+.env.*
+!.env.example
 data/
 *.db
+*.sqlite
+*.sqlite3
 *.db-journal
 *.db-wal
 *.db-shm
@@ -54,6 +58,20 @@ audit/
 traces/
 logs/
 *.log
+
+# Model weights / large binaries — these live in Ollama, NEVER in git
+*.gguf
+*.bin
+*.safetensors
+*.pt
+*.onnx
+models/cache/
+model_cache/
+.ollama/
+
+# Agent / runtime state
+.crew/
+*.state.json
 
 # LAB_MODE consent tokens - NEVER commit these
 *.lab_consent.token
