@@ -29,7 +29,18 @@ from dataclasses import dataclass
 from typing import Literal
 
 REQUIRED_PYTHON: tuple[int, int] = (3, 11)
-OLLAMA_HOST: str = os.environ.get("CREW_OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
+
+
+def _validated_ollama_host() -> str:
+    host = os.environ.get("CREW_OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
+    # Enforce http(s) scheme: urllib.urlopen also honors file://, so a non-http
+    # value in CREW_OLLAMA_HOST could turn an API probe into an arbitrary file read.
+    if not host.startswith(("http://", "https://")):
+        raise ValueError(f"CREW_OLLAMA_HOST must start with http:// or https:// — got {host!r}")
+    return host
+
+
+OLLAMA_HOST: str = _validated_ollama_host()
 MIN_VRAM_MB: int = 6000  # ~6 GB free required for a 7B Q4_K_M with KV cache.
 
 REQUIRED_MODELS: tuple[str, ...] = (
@@ -69,7 +80,9 @@ def check_python() -> CheckResult:
 def check_ollama_reachable() -> CheckResult:
     url = f"{OLLAMA_HOST}/api/version"
     try:
-        with urllib.request.urlopen(url, timeout=5) as resp:  # noqa: S310 - loopback only
+        # Host scheme is enforced in _validated_ollama_host(), so file:// cannot reach here.
+        # nosemgrep
+        with urllib.request.urlopen(url, timeout=5) as resp:  # noqa: S310
             data = json.loads(resp.read())
     except urllib.error.URLError as exc:
         return CheckResult("ollama-api", "fail", f"unreachable at {url}: {exc}")
@@ -164,7 +177,9 @@ def check_gpu() -> CheckResult:  # noqa: PLR0911 - flat error-handling reads cle
 def check_models() -> CheckResult:
     url = f"{OLLAMA_HOST}/api/tags"
     try:
-        with urllib.request.urlopen(url, timeout=5) as resp:  # noqa: S310 - loopback only
+        # Host scheme is enforced in _validated_ollama_host(), so file:// cannot reach here.
+        # nosemgrep
+        with urllib.request.urlopen(url, timeout=5) as resp:  # noqa: S310
             data = json.loads(resp.read())
     except (urllib.error.URLError, OSError, ValueError) as exc:
         return CheckResult("models", "warn", f"could not list models: {exc}")
