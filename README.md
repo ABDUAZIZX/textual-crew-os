@@ -7,12 +7,6 @@ optional Claude API integration for high-complexity supervision.
 > **Status:** functional (v1.1.0-local). Local agents, tiered supervision,
 > live dashboard, hardened security layer, and a `crew` CLI.
 
-<!-- Screenshot placeholder: add a dashboard capture at docs/screenshot.png -->
-![Crew Control Center dashboard](docs/screenshot.png)
-
-> _Screenshot placeholder — drop a capture of the dashboard at
-> `docs/screenshot.png` (the live agent network + GPU/CPU/power panels)._
-
 ## What It Does
 
 - Orchestrates a team of local LLMs (Ollama) to deliver software-engineering
