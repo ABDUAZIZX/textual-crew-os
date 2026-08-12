@@ -24,7 +24,7 @@ up Ollama (asking before it installs anything), and pulls the models named in
 `.env`. Everything stays on loopback by default.
 
 ```bash
-git clone https://github.com/azoz8/textual-crew-os.git
+git clone https://github.com/ABDUAZIZX/textual-crew-os.git
 cd textual-crew-os
 ./install.sh                 # add --dev for test/lint tooling
 source .venv/bin/activate
@@ -46,7 +46,7 @@ If `check_env.py` reports `Status: OK`, the host is ready.
 
 ```bash
 # 1) استنساخ المشروع
-git clone https://github.com/azoz8/textual-crew-os.git
+git clone https://github.com/ABDUAZIZX/textual-crew-os.git
 cd textual-crew-os
 
 # 2) تشغيل المُثبّت (يُنشئ venv، يُثبّت الحزم، يربط Ollama، يسحب الموديلات)
